@@ -15,7 +15,7 @@ class FirecrawlAdapter:
             result = self.app.search(query, limit=limit, scrape_options=ScrapeOptions(
             formats=["markdown"]
             ))
-            return result
+            return result.data
         except Exception as e:
             print(f"Error searching Firecrawl: {e}")
             return []

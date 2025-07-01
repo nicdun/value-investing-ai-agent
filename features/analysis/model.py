@@ -4,6 +4,10 @@ from features.fundamental_data.model import FundamentalData
 from langgraph.graph.message import add_messages
 from typing import Annotated
 
+
+class Metrics(BaseModel):
+    fcf_growth: float = 0.0
+    
 class ResearchState(BaseModel):
     messages: Annotated[list, add_messages] = []
     ticker_symbol: str = ""
@@ -13,6 +17,3 @@ class ResearchState(BaseModel):
     news: list[dict] = []
     investment_decision: str = ""
     report: str = ""
-
-class Metrics(BaseModel):
-    
