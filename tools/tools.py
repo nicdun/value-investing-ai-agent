@@ -1,7 +1,8 @@
 import requests
-from server import mcp
+from mcp_server import mcp
 from urllib.parse import quote_plus
-from features.alphavantage.api import AlphaVantageAPI, TickerData
+from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
+from features.fundamental_data.model import FundamentalData
 from config.env import ALPHAVANTAGE_API_KEY
 
 
@@ -16,12 +17,12 @@ def get_stock_price(symbol: str) -> float:
 
 
 @mcp.tool()
-def get_ticker_overview(symbol: str) -> TickerData:
+def get_ticker_overview(symbol: str) -> FundamentalData:
     """Get the overview of a stock ticket symbol via alphavantage API"""
     return AlphaVantageAPI.get_ticker_overview(symbol)
 
 @mcp.tool()
-def get_stock_sticker(search_string: str) -> str:
+def get_stock_ticker(search_string: str) -> str:
     """Get the stock ticker symbol for a given search string via alphavantage API"""
     print(f"Getting stock ticker symbol for {search_string}")
 
@@ -34,3 +35,18 @@ def get_stock_sticker(search_string: str) -> str:
         return data["bestMatches"][0]["1. symbol"]
     else:
         return "No stock ticker symbol found"
+
+@mcp.tool()
+def get_ticker_balance_sheet(symbol: str) -> FundamentalData:
+    """Get the balance sheet of a stock ticket symbol via alphavantage API"""
+    return AlphaVantageAPI.get_balance_sheet(symbol)
+
+@mcp.tool()
+def get_ticker_cash_flow(symbol: str) -> FundamentalData:
+    """Get the cash flow of a stock ticket symbol via alphavantage API"""
+    return AlphaVantageAPI.get_cash_flow(symbol)
+
+@mcp.tool()
+def get_ticker_income_statement(symbol: str) -> FundamentalData:
+    """Get the income statement of a stock ticket symbol via alphavantage API"""
+    return AlphaVantageAPI.get_income_statement(symbol)
