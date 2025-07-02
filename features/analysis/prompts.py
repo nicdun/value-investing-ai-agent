@@ -1,10 +1,11 @@
 class Prompts:
-        
     STOCK_ANALYSIS_BASE = """You are a financial analysis agent. Your task is to analyze the fundamental data of a given stock using a variety of specialized tools. Carefully review the company's financial statements, key ratios, and any relevant market data provided by the tools at your disposal. 
     Your goal is to determine whether the stock represents a good investment opportunity."""
 
     @staticmethod
-    def analyze_ticker_user(company_name: str, ticker: str, reports_summary: str, news_summary: str) -> str:
+    def analyze_ticker_user(
+        company_name: str, ticker: str, reports_summary: str, news_summary: str
+    ) -> str:
         return f"""
             Analyze the following research findings for {company_name} ({ticker}):
 
@@ -24,5 +25,3 @@ class Prompts:
 
             Format your response as a structured analysis report.
             """
-
-    

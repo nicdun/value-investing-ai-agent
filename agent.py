@@ -1,11 +1,11 @@
 from features.analysis.workflow import Workflow
 
-def main(): 
+
+def main():
     print("🔎 Stock Research Agent")
     workflow = Workflow()
-    
-    workflow.run()
 
+    workflow.run()
 
 
 if __name__ == "__main__":

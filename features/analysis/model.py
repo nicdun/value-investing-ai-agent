@@ -7,7 +7,8 @@ from typing import Annotated
 
 class Metrics(BaseModel):
     fcf_growth: float = 0.0
-    
+
+
 class ResearchState(BaseModel):
     messages: Annotated[list, add_messages] = []
     ticker_symbol: str = ""

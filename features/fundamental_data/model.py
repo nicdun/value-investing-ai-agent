@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class FundamentalData(BaseModel):
     symbol: str
     overview: dict = Field(default_factory=dict)

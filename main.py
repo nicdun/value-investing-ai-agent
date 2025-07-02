@@ -1,6 +1,6 @@
 from mcp_server import mcp
 
-# import 
+# import
 import tools.tools
 
 # import prompts

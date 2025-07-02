@@ -21,6 +21,7 @@ def get_ticker_overview(symbol: str) -> FundamentalData:
     """Get the overview of a stock ticket symbol via alphavantage API"""
     return AlphaVantageAPI.get_ticker_overview(symbol)
 
+
 @mcp.tool()
 def get_stock_ticker(search_string: str) -> str:
     """Get the stock ticker symbol for a given search string via alphavantage API"""
@@ -36,15 +37,18 @@ def get_stock_ticker(search_string: str) -> str:
     else:
         return "No stock ticker symbol found"
 
+
 @mcp.tool()
 def get_ticker_balance_sheet(symbol: str) -> FundamentalData:
     """Get the balance sheet of a stock ticket symbol via alphavantage API"""
     return AlphaVantageAPI.get_balance_sheet(symbol)
 
+
 @mcp.tool()
 def get_ticker_cash_flow(symbol: str) -> FundamentalData:
     """Get the cash flow of a stock ticket symbol via alphavantage API"""
     return AlphaVantageAPI.get_cash_flow(symbol)
+
 
 @mcp.tool()
 def get_ticker_income_statement(symbol: str) -> FundamentalData:
