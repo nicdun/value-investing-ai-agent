@@ -1,6 +1,7 @@
 from firecrawl import FirecrawlApp, ScrapeOptions
 
 from config.env import FIRECRAWL_API_KEY
+from features.workflow.model import PDFDocument
 
 
 class FirecrawlAdapter:
@@ -49,13 +50,13 @@ class FirecrawlAdapter:
             print(f"Error searching Firecrawl: {e}")
             return []
 
-    def scrape_page(self, url: str) -> dict:
+    def scrape_page(self, url: str) -> str:
         try:
             result = self.app.scrape_url(
                 url,
                 formats=["markdown"],
             )
-            return result
+            return result.data
         except Exception as e:
             print(f"Error scraping Firecrawl: {e}")
             return {}
@@ -97,36 +98,44 @@ class FirecrawlAdapter:
 
         return unique_ir_pages[:2]
 
-    def crawl_quarterly_reports(self, ir_pages: list[str]) -> list[dict]:
-        quarterly_reports = []
+    def crawl_quarterly_reports(self, documents: list[PDFDocument]) -> list[dict]:
+        reports = []
 
-        for page in ir_pages:
-            url = page.get("url")
+        for document in documents:
+            url = document.url
             if not url or not url.lower().endswith(".pdf"):
                 print(f"Skipping non-PDF URL: {url}")
                 continue
 
-            print(f"Crawling IR page: {url}")
-
             try:
-                # Scrape the IR page
-                scraped_data = self.scrape_page(url)
+                # scrape_page now returns a string (markdown content)
+                markdown_content = self.scrape_page(url)
 
-                if not scraped_data:
+                if not markdown_content:
+                    print(f"No content found for {url}")
                     continue
 
-                markdown = scraped_data.get("markdown", "")
+                # Create a report object with the document info and content
+                report = {
+                    "url": url,
+                    "title": document.title,
+                    "document_type": document.document_type,
+                    "period": document.period,
+                    "filename": document.filename,
+                    "content": markdown_content,
+                    "content_length": len(markdown_content),
+                }
 
-                quarterly_reports.extend(markdown)
+                reports.append(report)
+                print(
+                    f"✅ Successfully crawled {document.title} - {len(markdown_content)} characters"
+                )
 
             except Exception as e:
-                print(f"Error crawling {url}: {e}")
+                print(f"❌ Error crawling {url}: {e}")
                 continue
 
-        # Sort by date (most recent first) and remove duplicates
-        # quarterly_reports = self._deduplicate_and_sort_reports(quarterly_reports)
-
-        return quarterly_reports[:10]  # Return top 10 most recent reports
+        return reports
 
     def search_recent_news(self, company_name: str, ticker: str) -> list[dict]:
         """

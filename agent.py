@@ -1,4 +1,4 @@
-from features.analysis.workflow import Workflow
+from workflow.workflow import Workflow
 
 
 def main():

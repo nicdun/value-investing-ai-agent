@@ -4,12 +4,12 @@ from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END, START
-from features.analysis.model import ResearchState
+from workflow.model import ResearchState, PDFDocument, PDFDocumentList
 from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
 from features.fundamental_data.model import FundamentalData
 from features.research.firecrawl_adapter import FirecrawlAdapter
 from datetime import datetime
-from features.analysis.prompts import Prompts
+from workflow.prompts import Prompts
 import os
 import hashlib
 
@@ -38,12 +38,14 @@ class Workflow:
         graph_builder.add_node("retrieve_ticker_data", self._retrieve_ticker_symbol)
         graph_builder.add_node("analyze_ticker_data", self._analyze_ticker_data)
         graph_builder.add_node("web_research", self._web_research)
+        graph_builder.add_node("analyze_web_research", self._analyze_web_research)
         # graph_builder.add_node("generate_report", self.generate_report)
         # graph_builder.add_node("investment_decision", self.investment_decision)
         graph_builder.add_edge("retrieve_user_input", "retrieve_ticker_data")
         graph_builder.add_edge("retrieve_ticker_data", "analyze_ticker_data")
         graph_builder.add_edge("analyze_ticker_data", "web_research")
-        graph_builder.add_edge("retrieve_ticker_data", END)
+        graph_builder.add_edge("web_research", "analyze_web_research")
+        graph_builder.add_edge("analyze_web_research", END)
 
         return graph_builder.compile()
 
@@ -128,23 +130,21 @@ class Workflow:
             pdf_links = self.extract_pdf_links_with_llm(ir_pages, company_name)
 
             print("📊 Crawling for quarterly reports...")
-            quarterly_reports = self.firecrawl.crawl_quarterly_reports(pdf_links)
-            print(f"Found {len(quarterly_reports)} quarterly reports")
-            print(f"Quarterly reports: {quarterly_reports}")
+            reports = self.firecrawl.crawl_quarterly_reports(pdf_links)
+            print(f"Found {len(reports)} quarterly reports")
+            print(f"Quarterly reports: {reports}")
 
             print("📰 Searching for recent news...")
-            recent_news = self.firecrawl.search_recent_news(company_name, ticker_symbol)
-            print(f"Found {len(recent_news)} recent news items")
-            print(f"Recent news: {recent_news}")
+            # recent_news = self.firecrawl.search_recent_news(company_name, ticker_symbol)
+            # print(f"Found {len(recent_news)} recent news items")
+            # print(f"Recent news: {recent_news}")
             # Update state with research findings
             updated_state = ResearchState(
                 messages=state.messages,
                 ticker_symbol=state.ticker_symbol,
                 fundamental_data=state.fundamental_data,
                 calculated_metrics=state.calculated_metrics,
-                quarterly_reports=quarterly_reports,
-                news=recent_news,
-                investment_decision=state.investment_decision,
+                reports=reports,
             )
 
             print("✅ Web research completed")
@@ -172,7 +172,7 @@ class Workflow:
             formatted_prompt = prompt.format(
                 company_name=state.fundamental_data.overview.get("Name", ""),
                 ticker=state.ticker_symbol,
-                reports_summary=state.quarterly_reports,
+                reports_summary=state.reports,
                 news_summary=state.news,
             )
 
@@ -185,7 +185,7 @@ class Workflow:
 
     def extract_pdf_links_with_llm(
         self, ir_pages: list[dict], company_name: str
-    ) -> list[dict]:
+    ) -> list[PDFDocument]:
         print("🤖 Using LLM to extract PDF links from IR pages...")
 
         all_pdf_links = []
@@ -218,62 +218,38 @@ class Workflow:
 
     def _llm_extract_pdfs(
         self, markdown_content: str, company_name: str, source_url: str
-    ) -> list[dict]:
-        # Create the extraction prompt
+    ) -> list[PDFDocument]:
+        # Create the extraction prompt using the method from prompts.py
         extraction_prompt = PromptTemplate(
-            template="""
-You are a financial document analyst. Analyze the following markdown content from an investor relations page and extract information about PDF documents related to quarterly reports, annual reports, and SEC filings.
-
-Company: {company_name}
-Source URL: {source_url}
-
-Markdown Content:
-{markdown_content}
-
-INSTRUCTIONS:
-1. Look for PDF download links (URLs ending in .pdf)
-2. Focus on these document types:
-   - Quarterly Reports (10-Q, Q1, Q2, Q3, Q4, quarterly earnings)
-   - Annual Reports (10-K, annual report, annual earnings)
-   - SEC Filings (8-K, proxy statements, registration statements)
-   - Earnings releases and financial results
-
-3. For each PDF found, extract:
-   - Direct PDF URL
-   - Document title/name
-   - Document type (10-K, 10-Q, 8-K, Annual Report, Quarterly Report, etc.)
-   - Filing period/quarter if mentioned (Q1 2024, FY 2023, etc.)
-   - Filing date if mentioned
-
-4. Return the results as a valid JSON array. Each object should have these fields:
-   - "url": direct PDF download URL
-   - "title": document title
-   - "document_type": type of document
-   - "period": time period covered (if available)
-   - "filing_date": date filed (if available)
-   - "filename": extracted filename from URL
-
-IMPORTANT: 
-- Only include actual PDF download links, not general page links
-- Focus on recent documents (last 2-3 years if dates are available)
-- Return valid JSON format only
-
-JSON Output:
-            """,
+            template=self.prompts.extract_pdf_links_from_markdown(),
             input_variables=["company_name", "source_url", "markdown_content"],
         )
 
         try:
+            # Use structured output to get PDFDocumentList directly
+            structured_llm = self.llm.with_structured_output(PDFDocumentList)
+
             formatted_prompt = extraction_prompt.format(
                 company_name=company_name,
                 source_url=source_url,
                 markdown_content=markdown_content[:125000],
             )
 
-            response = self.llm.invoke(formatted_prompt)
-            print(f"Assistant: {response}")
+            print("🤖 Invoking LLM with structured output...")
+            response = structured_llm.invoke(formatted_prompt)
 
-            # return links
+            print(
+                f"✅ Received structured response with {len(response.documents)} documents"
+            )
+
+            # Log sample documents
+            for document in response.documents:
+                print(
+                    f"📄 Sample document: {document.title} - {document.document_type} - {document.url}"
+                )
+
+            return response.documents
+
         except Exception as e:
             print(f"    ❌ Error in LLM extraction: {e}")
             return []
