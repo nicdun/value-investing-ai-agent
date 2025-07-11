@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 import requests
 
-from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
+from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI, DataResult
 from features.fundamental_data.model import (
     FundamentalData,
     StockMetaData,
@@ -181,19 +181,78 @@ class TestAlphaVantageAPI:
         }
 
     # Test get_ticker_symbol
-    def test_get_ticker_symbol_success(self, mock_symbol_search_response):
+    def test_get_ticker_symbol_success(self, clean_cache, mock_symbol_search_response):
         """Test successful ticker symbol search."""
         with patch(
             "features.fundamental_data.alphavantage_adapter.requests.get"
         ) as mock_get:
             mock_get.return_value.json.return_value = mock_symbol_search_response
+            mock_get.return_value.raise_for_status.return_value = None
 
             result = AlphaVantageAPI.get_ticker_symbol("Apple")
 
-            assert result == mock_symbol_search_response["bestMatches"]
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, list)
+            assert result.data == mock_symbol_search_response["bestMatches"]
+            assert result.from_cache == False
             mock_get.assert_called_once()
             assert "SYMBOL_SEARCH" in mock_get.call_args[0][0]
             assert "keywords=Apple" in mock_get.call_args[0][0]
+
+    def test_get_ticker_symbol_uses_cache(
+        self, clean_cache, mock_symbol_search_response
+    ):
+        """Test that ticker symbol search uses intelligent caching."""
+        with patch(
+            "features.fundamental_data.alphavantage_adapter.requests.get"
+        ) as mock_get:
+            mock_get.return_value.json.return_value = mock_symbol_search_response
+            mock_get.return_value.raise_for_status.return_value = None
+
+            # First call - should hit API and cache individual symbols
+            result1 = AlphaVantageAPI.get_ticker_symbol("Apple")
+
+            # Second call with different query that matches cached symbol - should use cache
+            result2 = AlphaVantageAPI.get_ticker_symbol(
+                "AAPL"
+            )  # Should find Apple by symbol
+
+            # API should only be called once
+            assert mock_get.call_count == 1
+            # Both should return data, but second should be from cache
+            assert result1.from_cache == False
+            assert result2.from_cache == True
+            assert len(result2.data) > 0  # Should find Apple by symbol match
+
+    def test_get_ticker_symbol_intelligent_matching(
+        self, clean_cache, mock_symbol_search_response
+    ):
+        """Test intelligent matching by company name and symbol."""
+        with patch(
+            "features.fundamental_data.alphavantage_adapter.requests.get"
+        ) as mock_get:
+            mock_get.return_value.json.return_value = mock_symbol_search_response
+            mock_get.return_value.raise_for_status.return_value = None
+
+            # First call - caches individual symbols from response
+            result1 = AlphaVantageAPI.get_ticker_symbol("Apple")
+
+            # Test matching by exact symbol (case-insensitive)
+            result2 = AlphaVantageAPI.get_ticker_symbol("AAPL")
+
+            # Test matching by partial company name
+            result3 = AlphaVantageAPI.get_ticker_symbol("Apple Inc")
+
+            # API should only be called once, others found in cache
+            assert mock_get.call_count == 1
+            # First call should be from API, others from intelligent cache matching
+            assert result1.from_cache == False
+            assert result2.from_cache == True
+            assert result3.from_cache == True
+            # All should return data
+            assert len(result1.data) > 0
+            assert len(result2.data) > 0
+            assert len(result3.data) > 0
 
     # Test get_ticker_overview
     def test_get_ticker_overview_success(self, clean_cache, mock_overview_response):
@@ -206,11 +265,13 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_ticker_overview("AAPL")
 
-            # The method actually returns a StockMetaData, not FundamentalData
-            assert isinstance(result, StockMetaData)
-            assert result.symbol == "AAPL"
-            assert result.name == "Apple Inc"
-            assert result.market_capitalization == "3000000000000"
+            # The method now returns a DataResult
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, StockMetaData)
+            assert result.data.symbol == "AAPL"
+            assert result.data.name == "Apple Inc"
+            assert result.data.market_capitalization == "3000000000000"
+            assert result.from_cache == False
             mock_get.assert_called_once()
             assert "OVERVIEW" in mock_get.call_args[0][0]
 
@@ -230,8 +291,11 @@ class TestAlphaVantageAPI:
 
             # API should only be called once
             assert mock_get.call_count == 1
-            assert result1.symbol == result2.symbol
-            assert result1.name == result2.name
+            assert result1.data.symbol == result2.data.symbol
+            assert result1.data.name == result2.data.name
+            # First call should be from API, second from cache
+            assert result1.from_cache == False
+            assert result2.from_cache == True
 
     def test_get_ticker_overview_api_error(self, clean_cache):
         """Test ticker overview handles API errors gracefully."""
@@ -242,8 +306,10 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_ticker_overview("INVALID")
 
-            # Returns None on error
-            assert result is None
+            # Returns DataResult with None data on error
+            assert isinstance(result, DataResult)
+            assert result.data is None
+            assert result.from_cache == False
 
     # Test get_balance_sheet
     def test_get_balance_sheet_success(self, clean_cache, mock_balance_sheet_response):
@@ -256,11 +322,13 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_balance_sheet("AAPL")
 
-            assert isinstance(result, list)
-            assert len(result) == 2  # 1 annual + 1 quarterly
-            assert all(isinstance(report, BalanceSheetReport) for report in result)
-            assert result[0].fiscal_date_ending == "2023-09-30"
-            assert result[0].total_assets == "352755000000"
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, list)
+            assert len(result.data) == 2  # 1 annual + 1 quarterly
+            assert all(isinstance(report, BalanceSheetReport) for report in result.data)
+            assert result.data[0].fiscal_date_ending == "2023-09-30"
+            assert result.data[0].total_assets == "352755000000"
+            assert result.from_cache == False
             mock_get.assert_called_once()
             assert "BALANCE_SHEET" in mock_get.call_args[0][0]
 
@@ -282,8 +350,13 @@ class TestAlphaVantageAPI:
 
             # API should only be called once
             assert mock_get.call_count == 1
-            assert len(result1) == len(result2)
-            assert result1[0].fiscal_date_ending == result2[0].fiscal_date_ending
+            assert len(result1.data) == len(result2.data)
+            assert (
+                result1.data[0].fiscal_date_ending == result2.data[0].fiscal_date_ending
+            )
+            # First call should be from API, second from cache
+            assert result1.from_cache == False
+            assert result2.from_cache == True
 
     def test_get_balance_sheet_api_error(self, clean_cache):
         """Test balance sheet handles API errors gracefully."""
@@ -294,8 +367,10 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_balance_sheet("INVALID")
 
-            assert isinstance(result, list)
-            assert len(result) == 0
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, list)
+            assert len(result.data) == 0
+            assert result.from_cache == False
 
     # Test get_cash_flow
     def test_get_cash_flow_success(self, clean_cache, mock_cash_flow_response):
@@ -308,11 +383,13 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_cash_flow("AAPL")
 
-            assert isinstance(result, list)
-            assert len(result) == 2  # 1 annual + 1 quarterly
-            assert all(isinstance(report, CashFlowReport) for report in result)
-            assert result[0].fiscal_date_ending == "2023-09-30"
-            assert result[0].operating_cashflow == "110543000000"
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, list)
+            assert len(result.data) == 2  # 1 annual + 1 quarterly
+            assert all(isinstance(report, CashFlowReport) for report in result.data)
+            assert result.data[0].fiscal_date_ending == "2023-09-30"
+            assert result.data[0].operating_cashflow == "110543000000"
+            assert result.from_cache == False
             mock_get.assert_called_once()
             assert "CASH_FLOW" in mock_get.call_args[0][0]
 
@@ -332,8 +409,13 @@ class TestAlphaVantageAPI:
 
             # API should only be called once
             assert mock_get.call_count == 1
-            assert len(result1) == len(result2)
-            assert result1[0].operating_cashflow == result2[0].operating_cashflow
+            assert len(result1.data) == len(result2.data)
+            assert (
+                result1.data[0].operating_cashflow == result2.data[0].operating_cashflow
+            )
+            # First call should be from API, second from cache
+            assert result1.from_cache == False
+            assert result2.from_cache == True
 
     # Test get_income_statement
     def test_get_income_statement_success(
@@ -348,11 +430,15 @@ class TestAlphaVantageAPI:
 
             result = AlphaVantageAPI.get_income_statement("AAPL")
 
-            assert isinstance(result, list)
-            assert len(result) == 2  # 1 annual + 1 quarterly
-            assert all(isinstance(report, IncomeStatementReport) for report in result)
-            assert result[0].fiscal_date_ending == "2023-09-30"
-            assert result[0].total_revenue == "383285000000"
+            assert isinstance(result, DataResult)
+            assert isinstance(result.data, list)
+            assert len(result.data) == 2  # 1 annual + 1 quarterly
+            assert all(
+                isinstance(report, IncomeStatementReport) for report in result.data
+            )
+            assert result.data[0].fiscal_date_ending == "2023-09-30"
+            assert result.data[0].total_revenue == "383285000000"
+            assert result.from_cache == False
             mock_get.assert_called_once()
             assert "INCOME_STATEMENT" in mock_get.call_args[0][0]
 
@@ -374,8 +460,11 @@ class TestAlphaVantageAPI:
 
             # API should only be called once
             assert mock_get.call_count == 1
-            assert len(result1) == len(result2)
-            assert result1[0].total_revenue == result2[0].total_revenue
+            assert len(result1.data) == len(result2.data)
+            assert result1.data[0].total_revenue == result2.data[0].total_revenue
+            # First call should be from API, second from cache
+            assert result1.from_cache == False
+            assert result2.from_cache == True
 
     # Test get_comprehensive_data
     def test_get_comprehensive_data_success(
@@ -616,6 +705,12 @@ class TestAlphaVantageAPI:
 
             # Results should be the same
             if data_type == "overview":
-                assert result1.symbol == result2.symbol
+                assert result1.data.symbol == result2.data.symbol
+                # First call should be from API, second from cache
+                assert result1.from_cache == False
+                assert result2.from_cache == True
             else:
-                assert len(result1) == len(result2)
+                assert len(result1.data) == len(result2.data)
+                # First call should be from API, second from cache
+                assert result1.from_cache == False
+                assert result2.from_cache == True

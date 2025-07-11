@@ -17,17 +17,19 @@ class PersistentCache:
     """Persistent file-based cache for responses using strongly-typed models."""
 
     def __init__(self, cache_file_path: str = "cache/alpha_vantage_cache.json"):
-        self.cache_file_path = Path(cache_file_path)
+        # Initialize cache dictionaries
         self._overview_cache: dict[str, StockMetaData] = {}
         self._balance_sheet_cache: dict[str, list[BalanceSheetReport]] = {}
         self._cash_flow_cache: dict[str, list[CashFlowReport]] = {}
         self._income_statement_cache: dict[str, list[IncomeStatementReport]] = {}
         self._calculated_metrics_cache: dict[str, list[CalculatedMetrics]] = {}
+        self._symbol_search_cache: dict[str, dict] = {}  # symbol -> stock_data mapping
 
-        # Create cache directory if it doesn't exist
+        # Set up cache file path
+        self.cache_file_path = Path(cache_file_path)
         self.cache_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Load existing cache data on initialization
+        # Load existing cache data
         self._load_from_file()
 
     def _save_to_file(self):
@@ -62,6 +64,10 @@ class PersistentCache:
                     if metrics
                     else []
                     for symbol, metrics in self._calculated_metrics_cache.items()
+                },
+                "symbol_search": {
+                    symbol: stock_data
+                    for symbol, stock_data in self._symbol_search_cache.items()
                 },
                 "last_updated": datetime.now().isoformat(),
                 "version": "1.0",
@@ -162,6 +168,17 @@ class PersistentCache:
                                 f"Warning: Failed to load calculated metrics for {symbol}: {e}"
                             )
 
+            # Load symbol search data
+            if "symbol_search" in cache_data:
+                for symbol, stock_data in cache_data["symbol_search"].items():
+                    if stock_data:
+                        try:
+                            self._symbol_search_cache[symbol] = stock_data
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load symbol search data for '{symbol}': {e}"
+                            )
+
             # Print cache statistics
             total_symbols = len(self.get_cached_symbols())
             total_overview = len(self._overview_cache)
@@ -174,6 +191,7 @@ class PersistentCache:
             total_income_statement = sum(
                 len(reports) for reports in self._income_statement_cache.values()
             )
+            total_symbol_searches = len(self._symbol_search_cache)
 
             print(f"Loaded cache from {self.cache_file_path}:")
             print(f"  - {total_symbols} symbols")
@@ -181,6 +199,7 @@ class PersistentCache:
             print(f"  - {total_balance_sheet} balance sheet reports")
             print(f"  - {total_cash_flow} cash flow reports")
             print(f"  - {total_income_statement} income statement reports")
+            print(f"  - {total_symbol_searches} cached stock symbols for search")
 
             if "last_updated" in cache_data:
                 print(f"  - Last updated: {cache_data['last_updated']}")
@@ -294,6 +313,51 @@ class PersistentCache:
         )
         self._save_to_file()
 
+    # Symbol Search methods
+    def search_symbols(self, query: str) -> list[dict] | None:
+        """
+        Search for symbols in cache that match the query by symbol or company name.
+        Returns matching results or None if no matches found.
+        """
+        if not self._symbol_search_cache:
+            return None
+
+        query_lower = query.lower().strip()
+        matches = []
+
+        for symbol, stock_data in self._symbol_search_cache.items():
+            # Check if query matches symbol (case-insensitive)
+            if query_lower == symbol.lower():
+                matches.append(stock_data)
+                continue
+
+            # Check if query matches company name (case-insensitive, partial match)
+            company_name = stock_data.get("2. name", "").lower()
+            if company_name and (
+                query_lower in company_name or company_name in query_lower
+            ):
+                matches.append(stock_data)
+                continue
+
+            # Check if query is a partial match of symbol
+            if query_lower in symbol.lower():
+                matches.append(stock_data)
+
+        return matches if matches else None
+
+    def add_symbol_results(self, results: list[dict]):
+        """
+        Add symbol search results to cache, storing each result by its symbol.
+        Merges with existing data to avoid duplicates.
+        """
+        for result in results:
+            symbol = result.get("1. symbol")
+            if symbol:
+                # Store the complete result keyed by symbol
+                self._symbol_search_cache[symbol] = result
+
+        self._save_to_file()
+
     # Utility methods
     def has_cached_data(self, symbol: str, data_type: str) -> bool:
         """Check if specific data type is cached for a symbol."""
@@ -327,6 +391,7 @@ class PersistentCache:
             self._cash_flow_cache.clear()
             self._income_statement_cache.clear()
             self._calculated_metrics_cache.clear()
+            self._symbol_search_cache.clear()
 
         self._save_to_file()
 
@@ -360,6 +425,11 @@ class PersistentCache:
                 "calculated_metrics": sum(
                     len(metrics) for metrics in self._calculated_metrics_cache.values()
                 ),
+                "symbol_search_symbols": len(self._symbol_search_cache),
+            },
+            "symbol_search_cache": {
+                symbol: stock_data.get("2. name", "Unknown")
+                for symbol, stock_data in self._symbol_search_cache.items()
             },
             "file_size_bytes": self.cache_file_path.stat().st_size
             if self.cache_file_path.exists()
