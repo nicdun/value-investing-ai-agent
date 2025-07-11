@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+# Tech Stack
+
+Defines the tech stack that should be used to implement the given project.
+
+- language: python
+- testing lib: pytest
+- package manager: uv
+- UI (CLI): questionary

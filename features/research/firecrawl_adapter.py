@@ -1,7 +1,7 @@
 from firecrawl import FirecrawlApp, ScrapeOptions
 
 from config.env import FIRECRAWL_API_KEY
-from features.workflow.model import PDFDocument
+from workflow.model import PDFDocument
 
 
 class FirecrawlAdapter:

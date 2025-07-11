@@ -7,80 +7,11 @@ from .model import (
     BalanceSheetReport,
     CashFlowReport,
     IncomeStatementReport,
-    CalculatedMetrics,
 )
 from .cache import get_cache
 
 # Get the cache instance
 cache = get_cache()
-
-# Initialize with some default data
-cache.set_overview(
-    "AAPL",
-    StockMetaData(
-        symbol="AAPL",
-        name="Apple Inc",
-        description="Apple Inc. is an American multinational technology company that specializes in consumer electronics, computer software, and online services. Apple is the world's largest technology company by revenue (totalling $274.5 billion in 2020) and, since January 2021, the world's most valuable company. As of 2021, Apple is the world's fourth-largest PC vendor by unit sales, and fourth-largest smartphone manufacturer. It is one of the Big Five American information technology companies, along with Amazon, Google, Microsoft, and Facebook.",
-        cik="320193",
-        exchange="NASDAQ",
-        currency="USD",
-        country="USA",
-        sector="TECHNOLOGY",
-        industry="ELECTRONIC COMPUTERS",
-        address="ONE INFINITE LOOP, CUPERTINO, CA, US",
-        official_site="https://www.apple.com",
-        fiscal_year_end="September",
-        latest_quarter="2025-03-31",
-        market_capitalization="3064377901000",
-        ebitda="138866000000",
-        pe_ratio="32.01",
-        peg_ratio="1.871",
-        book_value="4.471",
-        dividend_per_share="1",
-        dividend_yield="0.0052",
-        eps="6.41",
-        revenue_per_share_ttm="26.45",
-        profit_margin="0.243",
-        operating_margin_ttm="0.31",
-        return_on_assets_ttm="0.238",
-        return_on_equity_ttm="1.38",
-        revenue_ttm="400366010000",
-        gross_profit_ttm="186699006000",
-        diluted_eps_ttm="6.41",
-        quarterly_earnings_growth_yoy="0.078",
-        quarterly_revenue_growth_yoy="0.051",
-        analyst_target_price="228.6",
-        analyst_rating_strong_buy="7",
-        analyst_rating_buy="21",
-        analyst_rating_hold="16",
-        analyst_rating_sell="2",
-        analyst_rating_strong_sell="1",
-        trailing_pe="32.01",
-        forward_pe="25.71",
-        price_to_sales_ratio_ttm="7.65",
-        price_to_book_ratio="45.88",
-        ev_to_revenue="7.78",
-        ev_to_ebitda="22.43",
-        beta="1.211",
-        week_52_high="259.47",
-        week_52_low="168.99",
-        day_50_moving_average="202.84",
-        day_200_moving_average="223.26",
-        shares_outstanding="14935800000",
-        dividend_date="2025-05-15",
-        ex_dividend_date="2025-05-12",
-    ),
-)
-
-# Store the complete FundamentalData for AAPL
-cache.set_fundamental_data(
-    "AAPL",
-    FundamentalData(
-        symbol="AAPL",
-        overview=cache.get_overview("AAPL"),
-        last_updated=datetime.now().isoformat(),
-    ),
-)
 
 
 class AlphaVantageAPI:
@@ -93,9 +24,9 @@ class AlphaVantageAPI:
         return data["bestMatches"]
 
     @staticmethod
-    def get_ticker_overview(symbol: str) -> FundamentalData:
+    def get_ticker_overview(symbol: str) -> StockMetaData:
         """Get company overview data with caching."""
-        # Check if we have cached data
+
         overview = cache.get_overview(symbol)
         if overview:
             return overview

@@ -80,7 +80,7 @@ class Workflow:
 
     def _analyze_ticker_data(self, state: ResearchState) -> ResearchState:
         print(f"Analyzing stock ticker {state.ticker_symbol}")
-        fundamental_data = AlphaVantageAPI.get_ticker_overview(state.ticker_symbol)
+        overview = AlphaVantageAPI.get_ticker_overview(state.ticker_symbol)
         # balance_sheet = AlphaVantageAPI.get_balance_sheet(ticker_symbol)
         # income_statement = AlphaVantageAPI.get_income_statement(ticker_symbol)
         # cash_flow = AlphaVantageAPI.get_cash_flow(ticker_symbol)
@@ -89,7 +89,7 @@ class Workflow:
             fundamental_data=FundamentalData(
                 symbol=state.ticker_symbol,
                 last_updated=datetime.now().isoformat(),
-                overview=fundamental_data.overview,
+                overview=overview,
             )
         )
 

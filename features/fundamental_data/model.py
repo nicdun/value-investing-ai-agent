@@ -1,9 +1,29 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split("_")
+    return components[0] + "".join(word.capitalize() for word in components[1:])
+
+
+def to_camel_capitalize(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split("_")
+    return "".join(word.capitalize() for word in components)
 
 
 class StockMetaData(BaseModel):
-    symbol: str
-    name: str
+    """Stock metadata and overview information."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel_capitalize,
+        populate_by_name=True,  # Allow both camelCase and snake_case during parsing
+    )
+
+    symbol: str = Field(alias="Symbol")
+    name: str = Field(alias="Name")
     description: str | None = None
     asset_type: str | None = None
     cik: str | None = None
@@ -47,21 +67,30 @@ class StockMetaData(BaseModel):
     ev_to_revenue: str | None = None
     ev_to_ebitda: str | None = None
     beta: str | None = None
-    week_52_high: str | None = None
-    week_52_low: str | None = None
-    day_50_moving_average: str | None = None
-    day_200_moving_average: str | None = None
+    week_52_high: str | None = Field(default=None, alias="52WeekHigh")
+    week_52_low: str | None = Field(default=None, alias="52WeekLow")
+    day_50_moving_average: str | None = Field(default=None, alias="50DayMovingAverage")
+    day_200_moving_average: str | None = Field(
+        default=None, alias="200DayMovingAverage"
+    )
     shares_outstanding: str | None = None
+    shares_float: str | None = None
+    percent_insiders: str | None = None
+    percent_institutions: str | None = None
     dividend_date: str | None = None
     ex_dividend_date: str | None = None
 
 
 class FinancialReport(BaseModel):
+    """Base class for financial reports."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,  # Allow both camelCase and snake_case during parsing
+    )
+
     fiscal_date_ending: str
     reported_currency: str
-
-    class Config:
-        extra = "allow"  # Allow additional fields as per TypeScript [key: string]: string | undefined
 
 
 class IncomeStatementReport(FinancialReport):
@@ -161,24 +190,44 @@ class CashFlowReport(FinancialReport):
 
 
 class StockIncomeStatement(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     symbol: str
     annual_reports: list[IncomeStatementReport] = Field(default_factory=list)
     quarterly_reports: list[IncomeStatementReport] | None = None
 
 
 class StockBalanceSheet(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     symbol: str
     annual_reports: list[BalanceSheetReport] = Field(default_factory=list)
     quarterly_reports: list[BalanceSheetReport] | None = None
 
 
 class StockCashFlow(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     symbol: str
     annual_reports: list[CashFlowReport] = Field(default_factory=list)
     quarterly_reports: list[CashFlowReport] | None = None
 
 
 class CalculatedMetrics(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     fiscal_date_ending: str
     quarter: int | None = None
     year: int
@@ -197,6 +246,11 @@ class CalculatedMetrics(BaseModel):
 
 
 class FundamentalData(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     symbol: str
     overview: StockMetaData | None = None
     balance_sheet: list[BalanceSheetReport] = Field(default_factory=list)
