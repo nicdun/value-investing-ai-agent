@@ -1,38 +1,33 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from config.env import GOOGLE_API_KEY
-from langchain.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage, SystemMessage
+from datetime import datetime
+
 from langchain.chat_models import init_chat_model
-from langgraph.graph import StateGraph, END, START
-from workflow.model import ResearchState, PDFDocument, PDFDocumentList
+from langchain.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import END, START, StateGraph
+
+from config.env import GOOGLE_API_KEY
 from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
 from features.fundamental_data.model import FundamentalData
+from features.llm.google_genai import get_google_genai_llm
+from features.evaluation.value_evaluation import evaluate
 from features.research.firecrawl_adapter import FirecrawlAdapter
-from datetime import datetime
-from workflow.prompts import Prompts
+from features.research.pdf_agent import PdfAgent
 from ui.cli import get_cli
-import os
-import hashlib
+from workflow.model import ResearchState
+from workflow.prompts import GenericPrompts
 
 
 class Workflow:
     def __init__(self):
-        self.llm = init_chat_model("google_genai:gemini-2.5-flash")
-        self.llm_chat = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash", google_api_key=GOOGLE_API_KEY
-        )
+        self.llm = get_google_genai_llm()
         self.firecrawl = FirecrawlAdapter()
         self.workflow = self._build_workflow()
-        self.prompts = Prompts()
+        self.prompts = GenericPrompts()
+        self.pdf_agent = PdfAgent()
         self.cli = get_cli()
 
     def _build_workflow(self):
-        # 1. Extract the ticker symbol from the user input
-        # 2. Analyze the fundamental data for the ticker symbol
-        # 3. do a web research on the stock name (from the overview fundamental data) for last quarterly reports & news & market
-        # 4. Generate a report on the ticker symbol
-        # 5. provide an investment decision recommondation
-        # 5. Return the report to the user
         graph_builder = StateGraph(ResearchState)
 
         graph_builder.add_edge(START, "retrieve_user_input")
@@ -40,16 +35,16 @@ class Workflow:
         graph_builder.add_node("retrieve_ticker_symbol", self._retrieve_ticker_symbol)
         graph_builder.add_node("retrieve_ticker_data", self._retrieve_ticker_data)
         graph_builder.add_node("analyze_ticker_data", self._analyze_ticker_data)
-        graph_builder.add_node("web_research", self._web_research)
-        graph_builder.add_node("analyze_web_research", self._analyze_web_research)
+        # graph_builder.add_node("web_research", self._web_research)
+        # graph_builder.add_node("analyze_web_research", self._analyze_web_research)
         # graph_builder.add_node("generate_report", self.generate_report)
         # graph_builder.add_node("investment_decision", self.investment_decision)
         graph_builder.add_edge("retrieve_user_input", "retrieve_ticker_symbol")
         graph_builder.add_edge("retrieve_ticker_symbol", "retrieve_ticker_data")
         graph_builder.add_edge("retrieve_ticker_data", "analyze_ticker_data")
-        graph_builder.add_edge("analyze_ticker_data", "web_research")
-        graph_builder.add_edge("web_research", "analyze_web_research")
-        graph_builder.add_edge("analyze_web_research", END)
+        # graph_builder.add_edge("analyze_ticker_data", "web_research")
+        # graph_builder.add_edge("web_research", "analyze_web_research")
+        graph_builder.add_edge("analyze_ticker_data", END)
 
         return graph_builder.compile()
 
@@ -66,25 +61,26 @@ class Workflow:
             return ResearchState()
         except Exception as e:
             self.cli.display_error(f"An error occurred during analysis: {str(e)}")
+            raise e
             return ResearchState()
 
-    def _retrieve_user_input(self, state: ResearchState) -> ResearchState:
+    def _retrieve_user_input(self, state: ResearchState) -> dict:
         """Get user input for stock name using questionary."""
         try:
             user_input = self.cli.get_stock_name()
             if not user_input:
                 # User cancelled input
-                return ResearchState()
+                return {}
 
-            return ResearchState(messages=[HumanMessage(content=user_input)])
+            return {"messages": [HumanMessage(content=user_input)]}
         except KeyboardInterrupt:
             self.cli.display_info("Search cancelled.")
-            return ResearchState()
+            return {}
 
-    def _retrieve_ticker_symbol(self, state: ResearchState) -> ResearchState:
+    def _retrieve_ticker_symbol(self, state: ResearchState) -> dict:
         """Search for stock ticker and let user select from results."""
         if not state.messages:
-            return ResearchState()
+            return {}
 
         search_query = state.messages[-1].content
         self.cli.show_progress_start(
@@ -103,7 +99,7 @@ class Workflow:
                 ):
                     return self._retrieve_user_input(state)
                 else:
-                    return ResearchState()
+                    return {}
 
             # Show cache vs API source information
             if search_result.from_cache:
@@ -126,7 +122,7 @@ class Workflow:
 
                 if not selected_ticker:
                     # User cancelled selection
-                    return ResearchState()
+                    return {}
 
                 if selected_ticker == "__search_again__":
                     # User wants to search again
@@ -141,28 +137,19 @@ class Workflow:
 
                 # Confirm with user
                 if self.cli.confirm_analysis(selected_ticker, company_name):
-                    return ResearchState(
-                        messages=state.messages, ticker_symbol=selected_ticker
-                    )
+                    return {"ticker_symbol": selected_ticker}
                 else:
                     # User wants to select a different stock
                     continue
 
         except Exception as e:
             self.cli.show_progress_error(f"Error searching for stocks: {str(e)}")
-            return ResearchState()
+            return {}
 
-    def _analyze_ticker_data(self, state: ResearchState) -> ResearchState:
-        """Analyze fundamental data for the selected ticker."""
-        if not state.ticker_symbol:
-            return state
-
-        return state
-
-    def _retrieve_ticker_data(self, state: ResearchState) -> ResearchState:
+    def _retrieve_ticker_data(self, state: ResearchState) -> dict:
         """Retrieve fundamental data for the selected ticker."""
         if not state.ticker_symbol:
-            return state
+            return {}
 
         self.cli.show_progress_start(
             f"Analyzing fundamental data for {state.ticker_symbol}"
@@ -284,17 +271,26 @@ class Workflow:
             }
             self.cli.display_analysis_summary(summary_data)
 
-            return ResearchState(
-                messages=state.messages,
-                ticker_symbol=state.ticker_symbol,
-                fundamental_data=fundamental_data,
-            )
+            return {"fundamental_data": fundamental_data}
 
         except Exception as e:
             self.cli.show_progress_error(f"Error analyzing fundamental data: {str(e)}")
-            return state
+            return {}
 
-    def _web_research(self, state: ResearchState) -> ResearchState:
+    def _analyze_ticker_data(self, state: ResearchState) -> dict:
+        """Analyze fundamental data for the selected ticker."""
+        if not state.ticker_symbol or not state.fundamental_data:
+            return {}
+
+        self.cli.show_progress_start("Analyzing fundamental data...")
+
+        calculated_metrics = evaluate(state.fundamental_data)
+
+        self.cli.show_progress_success("Fundamental data analysis completed")
+
+        return {"calculated_metrics": calculated_metrics}
+
+    def _web_research(self, state: ResearchState) -> dict:
         """Perform web research for the company."""
         self.cli.show_progress_start("Starting web research...")
 
@@ -303,7 +299,7 @@ class Workflow:
             self.cli.show_progress_error(
                 "No fundamental data available for web research"
             )
-            return state
+            return {}
 
         company_name = (
             state.fundamental_data.overview.name
@@ -314,7 +310,7 @@ class Workflow:
 
         if not company_name:
             self.cli.show_progress_error("No company name found in fundamental data")
-            return state
+            return {}
 
         self.cli.show_progress_start(f"Researching: {company_name} ({ticker_symbol})")
 
@@ -337,7 +333,9 @@ class Workflow:
                 url = page.get("url", "")
                 self.cli.display_info(f"IR Page: {title} - {url}")
 
-            pdf_links = self.extract_pdf_links_with_llm(ir_pages, company_name)
+            pdf_links = self.pdf_agent.extract_pdf_links_with_llm(
+                ir_pages, company_name
+            )
 
             self.cli.show_progress_start("Crawling for quarterly reports...")
             reports = self.firecrawl.crawl_quarterly_reports(pdf_links)
@@ -347,24 +345,15 @@ class Workflow:
             # recent_news = self.firecrawl.search_recent_news(company_name, ticker_symbol)
             # self.cli.show_progress_success(f"Found {len(recent_news)} recent news items")
 
-            # Update state with research findings
-            updated_state = ResearchState(
-                messages=state.messages,
-                ticker_symbol=state.ticker_symbol,
-                fundamental_data=state.fundamental_data,
-                calculated_metrics=state.calculated_metrics,
-                reports=reports,
-            )
-
             self.cli.show_progress_success("Web research completed")
-            return updated_state
+            return {"reports": reports}
 
         except Exception as e:
             self.cli.show_progress_error(f"Error during web research: {str(e)}")
-            # Return original state if research fails
-            return state
+            # Return empty dict if research fails
+            return {}
 
-    def _analyze_web_research(self, state: ResearchState) -> ResearchState:
+    def _analyze_web_research(self, state: ResearchState) -> dict:
         """Analyze the collected web research data."""
         self.cli.show_progress_start("Analyzing web research data...")
 
@@ -401,93 +390,12 @@ class Workflow:
             # Display the analysis result
             self.cli.display_info("Analysis Report Generated")
 
-            return ResearchState(
-                messages=state.messages,
-                ticker_symbol=state.ticker_symbol,
-                fundamental_data=state.fundamental_data,
-                calculated_metrics=state.calculated_metrics,
-                reports=state.reports,
-                news=state.news,
-                report=response.content
+            return {
+                "report": response.content
                 if hasattr(response, "content")
-                else str(response),
-            )
+                else str(response)
+            }
 
         except Exception as e:
             self.cli.show_progress_error(f"Error during analysis: {str(e)}")
-            return state
-
-    def extract_pdf_links_with_llm(
-        self, ir_pages: list[dict], company_name: str
-    ) -> list[PDFDocument]:
-        self.cli.show_progress_start("Using LLM to extract PDF links from IR pages...")
-
-        all_pdf_links = []
-
-        for page in ir_pages:
-            url = page.get("url", "")
-            markdown_content = page.get("markdown", "")
-
-            safe_company_name = "".join(c if c.isalnum() else "_" for c in company_name)
-            filename = f"ir_markdown_debug/{safe_company_name}.md"
-            try:
-                with open(filename, "r", encoding="utf-8") as f:
-                    markdown_content_from_file = f.read()
-            except Exception as e:
-                self.cli.show_progress_error(
-                    f"Failed to load markdown content from file: {e}"
-                )
-                markdown_content_from_file = markdown_content  # fallback
-
-            pdf_links = self._llm_extract_pdfs(
-                markdown_content_from_file, company_name, url
-            )
-
-            if pdf_links:
-                all_pdf_links.extend(pdf_links)
-                self.cli.show_progress_success(f"Found {len(pdf_links)} PDF links")
-            else:
-                self.cli.show_progress_warning("No PDF links found")
-
-        self.cli.show_progress_success(
-            f"Total PDF links extracted: {len(all_pdf_links)}"
-        )
-        return all_pdf_links
-
-    def _llm_extract_pdfs(
-        self, markdown_content: str, company_name: str, source_url: str
-    ) -> list[PDFDocument]:
-        # Create the extraction prompt using the method from prompts.py
-        extraction_prompt = PromptTemplate(
-            template=self.prompts.extract_pdf_links_from_markdown(),
-            input_variables=["company_name", "source_url", "markdown_content"],
-        )
-
-        try:
-            # Use structured output to get PDFDocumentList directly
-            structured_llm = self.llm.with_structured_output(PDFDocumentList)
-
-            formatted_prompt = extraction_prompt.format(
-                company_name=company_name,
-                source_url=source_url,
-                markdown_content=markdown_content[:125000],
-            )
-
-            self.cli.show_progress_start("Invoking LLM with structured output...")
-            response = structured_llm.invoke(formatted_prompt)
-
-            self.cli.show_progress_success(
-                f"Received structured response with {len(response.documents)} documents"
-            )
-
-            # Log sample documents
-            for document in response.documents:
-                self.cli.display_info(
-                    f"Sample document: {document.title} - {document.document_type} - {document.url}"
-                )
-
-            return response.documents
-
-        except Exception as e:
-            self.cli.show_progress_error(f"Error in LLM extraction: {e}")
-            return []
+            return {}

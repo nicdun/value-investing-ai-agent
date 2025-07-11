@@ -168,7 +168,7 @@ class StockResearchCLI:
                 hasattr(overview, "market_capitalization")
                 and overview.market_capitalization
             ):
-                questionary.print(f"  Market Cap: ${overview.market_capitalization:,}")
+                questionary.print(f"  Market Cap: ${overview.market_capitalization}")
             if hasattr(overview, "pe_ratio") and overview.pe_ratio:
                 questionary.print(f"  P/E Ratio: {overview.pe_ratio}")
             if hasattr(overview, "sector") and overview.sector:
@@ -212,6 +212,14 @@ class StockResearchCLI:
     def display_info(self, info_message: str) -> None:
         """Display info message."""
         questionary.print(f"\nℹ️  {info_message}", style="fg:#85c5f7")
+
+    def show_info(self, message: str) -> None:
+        """Show info message without extra formatting."""
+        questionary.print(message, style="fg:#85c5f7")
+
+    def show_warning(self, message: str) -> None:
+        """Show warning message."""
+        questionary.print(f"⚠️  {message}", style="fg:#ffaa00")
 
     def ask_yes_no(self, question: str, default: bool = True) -> bool:
         """

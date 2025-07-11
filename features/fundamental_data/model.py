@@ -189,39 +189,6 @@ class CashFlowReport(FinancialReport):
     net_income: str | None = None
 
 
-class StockIncomeStatement(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-    )
-
-    symbol: str
-    annual_reports: list[IncomeStatementReport] = Field(default_factory=list)
-    quarterly_reports: list[IncomeStatementReport] | None = None
-
-
-class StockBalanceSheet(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-    )
-
-    symbol: str
-    annual_reports: list[BalanceSheetReport] = Field(default_factory=list)
-    quarterly_reports: list[BalanceSheetReport] | None = None
-
-
-class StockCashFlow(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-    )
-
-    symbol: str
-    annual_reports: list[CashFlowReport] = Field(default_factory=list)
-    quarterly_reports: list[CashFlowReport] | None = None
-
-
 class CalculatedMetrics(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,

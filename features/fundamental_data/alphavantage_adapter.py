@@ -39,7 +39,7 @@ class AlphaVantageAPI:
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
-
+            print(f"AlphaVantage API response: {data}")
             # Extract best matches
             best_matches = data.get("bestMatches", [])
 
