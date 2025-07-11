@@ -81,15 +81,18 @@ class Workflow:
     def _analyze_ticker_data(self, state: ResearchState) -> ResearchState:
         print(f"Analyzing stock ticker {state.ticker_symbol}")
         overview = AlphaVantageAPI.get_ticker_overview(state.ticker_symbol)
-        # balance_sheet = AlphaVantageAPI.get_balance_sheet(ticker_symbol)
-        # income_statement = AlphaVantageAPI.get_income_statement(ticker_symbol)
-        # cash_flow = AlphaVantageAPI.get_cash_flow(ticker_symbol)
+        balance_sheet = AlphaVantageAPI.get_balance_sheet(state.ticker_symbol)
+        income_statement = AlphaVantageAPI.get_income_statement(state.ticker_symbol)
+        cash_flow = AlphaVantageAPI.get_cash_flow(state.ticker_symbol)
 
         return ResearchState(
             fundamental_data=FundamentalData(
                 symbol=state.ticker_symbol,
                 last_updated=datetime.now().isoformat(),
                 overview=overview,
+                balance_sheet=balance_sheet,
+                income_statement=income_statement,
+                cash_flow=cash_flow,
             )
         )
 

@@ -153,3 +153,7 @@ cython_debug/
 # MCP specific
 *.mcp_cache/
 mcp.log
+
+# Alpha Vantage cache files
+cache/
+*.json.tmp

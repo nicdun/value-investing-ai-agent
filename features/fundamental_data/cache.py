@@ -1,4 +1,8 @@
+import json
+import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 from .model import (
     FundamentalData,
     StockMetaData,
@@ -9,15 +13,181 @@ from .model import (
 )
 
 
-class Cache:
-    """In-memory cache for responses using strongly-typed models."""
+class PersistentCache:
+    """Persistent file-based cache for responses using strongly-typed models."""
 
-    def __init__(self):
+    def __init__(self, cache_file_path: str = "cache/alpha_vantage_cache.json"):
+        self.cache_file_path = Path(cache_file_path)
         self._overview_cache: dict[str, StockMetaData] = {}
         self._balance_sheet_cache: dict[str, list[BalanceSheetReport]] = {}
         self._cash_flow_cache: dict[str, list[CashFlowReport]] = {}
         self._income_statement_cache: dict[str, list[IncomeStatementReport]] = {}
         self._calculated_metrics_cache: dict[str, list[CalculatedMetrics]] = {}
+
+        # Create cache directory if it doesn't exist
+        self.cache_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Load existing cache data on initialization
+        self._load_from_file()
+
+    def _save_to_file(self):
+        """Save current cache state to JSON file."""
+        try:
+            # Convert Pydantic models to dictionaries for JSON serialization
+            cache_data = {
+                "overview": {
+                    symbol: data.model_dump() if data else None
+                    for symbol, data in self._overview_cache.items()
+                },
+                "balance_sheet": {
+                    symbol: [report.model_dump() for report in reports]
+                    if reports
+                    else []
+                    for symbol, reports in self._balance_sheet_cache.items()
+                },
+                "cash_flow": {
+                    symbol: [report.model_dump() for report in reports]
+                    if reports
+                    else []
+                    for symbol, reports in self._cash_flow_cache.items()
+                },
+                "income_statement": {
+                    symbol: [report.model_dump() for report in reports]
+                    if reports
+                    else []
+                    for symbol, reports in self._income_statement_cache.items()
+                },
+                "calculated_metrics": {
+                    symbol: [metric.model_dump() for metric in metrics]
+                    if metrics
+                    else []
+                    for symbol, metrics in self._calculated_metrics_cache.items()
+                },
+                "last_updated": datetime.now().isoformat(),
+                "version": "1.0",
+            }
+
+            # Write to temporary file first, then rename for atomic operation
+            temp_file = self.cache_file_path.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, indent=2, ensure_ascii=False)
+
+            # Atomic rename
+            temp_file.replace(self.cache_file_path)
+
+        except Exception as e:
+            print(f"Warning: Failed to save cache to {self.cache_file_path}: {e}")
+
+    def _load_from_file(self):
+        """Load cache data from JSON file."""
+        if not self.cache_file_path.exists():
+            print(
+                f"Cache file {self.cache_file_path} doesn't exist. Starting with empty cache."
+            )
+            return
+
+        try:
+            with open(self.cache_file_path, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # Validate cache file structure
+            if not isinstance(cache_data, dict) or "version" not in cache_data:
+                print(f"Warning: Invalid cache file format. Starting with empty cache.")
+                return
+
+            # Load overview data
+            if "overview" in cache_data:
+                for symbol, data_dict in cache_data["overview"].items():
+                    if data_dict:
+                        try:
+                            self._overview_cache[symbol] = StockMetaData(**data_dict)
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load overview data for {symbol}: {e}"
+                            )
+
+            # Load balance sheet data
+            if "balance_sheet" in cache_data:
+                for symbol, reports_list in cache_data["balance_sheet"].items():
+                    if reports_list:
+                        try:
+                            self._balance_sheet_cache[symbol] = [
+                                BalanceSheetReport(**report_dict)
+                                for report_dict in reports_list
+                            ]
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load balance sheet data for {symbol}: {e}"
+                            )
+
+            # Load cash flow data
+            if "cash_flow" in cache_data:
+                for symbol, reports_list in cache_data["cash_flow"].items():
+                    if reports_list:
+                        try:
+                            self._cash_flow_cache[symbol] = [
+                                CashFlowReport(**report_dict)
+                                for report_dict in reports_list
+                            ]
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load cash flow data for {symbol}: {e}"
+                            )
+
+            # Load income statement data
+            if "income_statement" in cache_data:
+                for symbol, reports_list in cache_data["income_statement"].items():
+                    if reports_list:
+                        try:
+                            self._income_statement_cache[symbol] = [
+                                IncomeStatementReport(**report_dict)
+                                for report_dict in reports_list
+                            ]
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load income statement data for {symbol}: {e}"
+                            )
+
+            # Load calculated metrics data
+            if "calculated_metrics" in cache_data:
+                for symbol, metrics_list in cache_data["calculated_metrics"].items():
+                    if metrics_list:
+                        try:
+                            self._calculated_metrics_cache[symbol] = [
+                                CalculatedMetrics(**metric_dict)
+                                for metric_dict in metrics_list
+                            ]
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load calculated metrics for {symbol}: {e}"
+                            )
+
+            # Print cache statistics
+            total_symbols = len(self.get_cached_symbols())
+            total_overview = len(self._overview_cache)
+            total_balance_sheet = sum(
+                len(reports) for reports in self._balance_sheet_cache.values()
+            )
+            total_cash_flow = sum(
+                len(reports) for reports in self._cash_flow_cache.values()
+            )
+            total_income_statement = sum(
+                len(reports) for reports in self._income_statement_cache.values()
+            )
+
+            print(f"Loaded cache from {self.cache_file_path}:")
+            print(f"  - {total_symbols} symbols")
+            print(f"  - {total_overview} overview records")
+            print(f"  - {total_balance_sheet} balance sheet reports")
+            print(f"  - {total_cash_flow} cash flow reports")
+            print(f"  - {total_income_statement} income statement reports")
+
+            if "last_updated" in cache_data:
+                print(f"  - Last updated: {cache_data['last_updated']}")
+
+        except Exception as e:
+            print(f"Warning: Failed to load cache from {self.cache_file_path}: {e}")
+            print("Starting with empty cache.")
 
     def _merge_financial_reports(
         self,
@@ -72,8 +242,9 @@ class Cache:
         return self._overview_cache.get(symbol)
 
     def set_overview(self, symbol: str, data: StockMetaData):
-        """Cache overview data."""
+        """Cache overview data and save to file."""
         self._overview_cache[symbol] = data
+        self._save_to_file()
 
     # Balance Sheet methods
     def get_balance_sheet(self, symbol: str) -> list[BalanceSheetReport] | None:
@@ -81,10 +252,11 @@ class Cache:
         return self._balance_sheet_cache.get(symbol)
 
     def set_balance_sheet(self, symbol: str, data: list[BalanceSheetReport]):
-        """Append new balance sheet data to cache."""
+        """Append new balance sheet data to cache and save to file."""
         self._balance_sheet_cache[symbol] = self._merge_financial_reports(
             self._balance_sheet_cache.get(symbol), data
         )
+        self._save_to_file()
 
     # Cash Flow methods
     def get_cash_flow(self, symbol: str) -> list[CashFlowReport] | None:
@@ -92,10 +264,11 @@ class Cache:
         return self._cash_flow_cache.get(symbol)
 
     def set_cash_flow(self, symbol: str, data: list[CashFlowReport]):
-        """Append new cash flow data to cache."""
+        """Append new cash flow data to cache and save to file."""
         self._cash_flow_cache[symbol] = self._merge_financial_reports(
             self._cash_flow_cache.get(symbol), data
         )
+        self._save_to_file()
 
     # Income Statement methods
     def get_income_statement(self, symbol: str) -> list[IncomeStatementReport] | None:
@@ -103,10 +276,11 @@ class Cache:
         return self._income_statement_cache.get(symbol)
 
     def set_income_statement(self, symbol: str, data: list[IncomeStatementReport]):
-        """Append new income statement data to cache."""
+        """Append new income statement data to cache and save to file."""
         self._income_statement_cache[symbol] = self._merge_financial_reports(
             self._income_statement_cache.get(symbol), data
         )
+        self._save_to_file()
 
     # Calculated Metrics methods
     def get_calculated_metrics(self, symbol: str) -> list[CalculatedMetrics] | None:
@@ -114,10 +288,11 @@ class Cache:
         return self._calculated_metrics_cache.get(symbol)
 
     def set_calculated_metrics(self, symbol: str, data: list[CalculatedMetrics]):
-        """Append new calculated metrics to cache."""
+        """Append new calculated metrics to cache and save to file."""
         self._calculated_metrics_cache[symbol] = self._merge_calculated_metrics(
             self._calculated_metrics_cache.get(symbol), data
         )
+        self._save_to_file()
 
     # Utility methods
     def has_cached_data(self, symbol: str, data_type: str) -> bool:
@@ -137,7 +312,7 @@ class Cache:
         return symbol in cache and cache[symbol] is not None
 
     def clear_cache(self, symbol: str | None = None):
-        """Clear cache for a specific symbol or all symbols."""
+        """Clear cache for a specific symbol or all symbols and save to file."""
         if symbol:
             # Clear specific symbol
             self._overview_cache.pop(symbol, None)
@@ -153,6 +328,8 @@ class Cache:
             self._income_statement_cache.clear()
             self._calculated_metrics_cache.clear()
 
+        self._save_to_file()
+
     def get_cached_symbols(self) -> list[str]:
         """Get list of all cached symbols."""
         all_symbols = set()
@@ -163,11 +340,37 @@ class Cache:
         all_symbols.update(self._calculated_metrics_cache.keys())
         return sorted(list(all_symbols))
 
+    def get_cache_info(self) -> dict[str, Any]:
+        """Get information about the current cache state."""
+        return {
+            "cache_file": str(self.cache_file_path),
+            "file_exists": self.cache_file_path.exists(),
+            "total_symbols": len(self.get_cached_symbols()),
+            "data_counts": {
+                "overview": len(self._overview_cache),
+                "balance_sheet_reports": sum(
+                    len(reports) for reports in self._balance_sheet_cache.values()
+                ),
+                "cash_flow_reports": sum(
+                    len(reports) for reports in self._cash_flow_cache.values()
+                ),
+                "income_statement_reports": sum(
+                    len(reports) for reports in self._income_statement_cache.values()
+                ),
+                "calculated_metrics": sum(
+                    len(metrics) for metrics in self._calculated_metrics_cache.values()
+                ),
+            },
+            "file_size_bytes": self.cache_file_path.stat().st_size
+            if self.cache_file_path.exists()
+            else 0,
+        }
+
 
 # Global cache instance
-_cache = Cache()
+_cache = PersistentCache()
 
 
-def get_cache() -> Cache:
+def get_cache() -> PersistentCache:
     """Get the global cache instance."""
     return _cache
