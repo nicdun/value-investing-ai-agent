@@ -7,6 +7,7 @@ import questionary
 from questionary import Style
 from typing import List, Dict, Optional
 import sys
+from features.fundamental_data.model import ProcessedFundamentalData, StockMetaData
 
 
 # Custom style for the CLI
@@ -142,7 +143,7 @@ class StockResearchCLI:
         """Show warning for a step."""
         questionary.print(f"⚠️  {message}", style="fg:#ffaa00")
 
-    def display_analysis_summary(self, data: Dict) -> None:
+    def display_analysis_summary(self, data: StockMetaData) -> None:
         """
         Display analysis summary in a nicely formatted way.
 
@@ -153,36 +154,26 @@ class StockResearchCLI:
         questionary.print("📊  ANALYSIS SUMMARY", style="fg:#ff9500 bold")
         questionary.print("=" * 60, style="fg:#ff9500 bold")
 
-        # Display basic info
-        if "symbol" in data:
-            questionary.print(f"Symbol: {data['symbol']}", style="bold")
-        if "company_name" in data:
-            questionary.print(f"Company: {data['company_name']}", style="bold")
+        questionary.print(f"Symbol: {data.symbol}", style="bold")
+        questionary.print(f"Company: {data.name}", style="bold")
 
         # Display key metrics if available
-        if "overview" in data and data["overview"]:
-            overview = data["overview"]
-            questionary.print("\n📈 Key Metrics:", style="fg:#ff9500 bold")
+        questionary.print("\n📈 Key Metrics:", style="fg:#ff9500 bold")
 
-            if (
-                hasattr(overview, "market_capitalization")
-                and overview.market_capitalization
-            ):
-                questionary.print(f"  Market Cap: ${overview.market_capitalization}")
-            if hasattr(overview, "pe_ratio") and overview.pe_ratio:
-                questionary.print(f"  P/E Ratio: {overview.pe_ratio}")
-            if hasattr(overview, "sector") and overview.sector:
-                questionary.print(f"  Sector: {overview.sector}")
-
-        # Display data counts
-        counts = data.get("data_counts", {})
-        if counts:
-            questionary.print("\n📋 Data Retrieved:", style="fg:#ff9500 bold")
-            for data_type, count in counts.items():
-                if count > 0:
-                    questionary.print(
-                        f"  {data_type.replace('_', ' ').title()}: {count}"
-                    )
+        if data.market_capitalization:
+            questionary.print(f"  Market Cap: ${data.market_capitalization}")
+        if data.pe_ratio:
+            questionary.print(f"  P/E Ratio: {data.pe_ratio}")
+        if data.sector:
+            questionary.print(f"  Sector: {data.sector}")
+        if data.dividend_yield:
+            questionary.print(f"  Industry: {data.industry}")
+        if data.dividend_per_share:
+            questionary.print(f"  Dividend Per Share: {data.dividend_per_share}")
+        if data.dividend_yield:
+            questionary.print(f"  Dividend Yield: {data.dividend_yield}")
+        if data.eps:
+            questionary.print(f"  EPS: {data.eps}")
 
     def show_analysis_options(self) -> str:
         """
@@ -242,6 +233,87 @@ class StockResearchCLI:
         )
         questionary.print("Happy investing! 📈", style="fg:#85c5f7")
         questionary.print("=" * 60, style="fg:#ff9500 bold")
+
+    def print_fundamental_data_time_series(
+        self, symbol: str, time_series: list[ProcessedFundamentalData]
+    ):
+        """Print the calculated financial time series data as a table."""
+
+        if not time_series:
+            self.show_warning("No financial time series data available")
+            return
+
+        self.show_info(f"\nFinancial Time Series for {symbol}")
+        self.show_info("=" * 80)
+
+        # Header
+        headers = [
+            "Year",
+            "Revenue (M)",
+            "Net Income (M)",
+            "Operating Cashflow (M)",
+            "Free Cash Flow (M)",
+            "Gross Margin",
+            "ROIC",
+            "D/E Ratio",
+            "Shares (M)",
+        ]
+
+        # Format the header
+        header_line = " | ".join(f"{h:>15}" for h in headers)
+        self.show_info(header_line)
+        self.show_info("-" * len(header_line))
+
+        # Data rows
+        for period in time_series:
+            year = period.fiscal_date_ending[:4] if period.fiscal_date_ending else "N/A"
+
+            revenue = period.revenue
+            revenue_str = f"{revenue / 1_000_000:.1f}" if revenue else "N/A"
+
+            net_income = period.net_income
+            net_income_str = f"{net_income / 1_000_000:.1f}" if net_income else "N/A"
+
+            operating_cashflow = period.operating_cashflow
+            operating_cashflow_str = (
+                f"{operating_cashflow / 1_000_000:.1f}" if operating_cashflow else "N/A"
+            )
+            fcf = period.free_cash_flow
+            fcf_str = f"{fcf / 1_000_000:.1f}" if fcf else "N/A"
+
+            gross_margin = period.gross_margin
+            gross_margin_str = f"{gross_margin:.1%}" if gross_margin else "N/A"
+
+            roic = period.return_on_invested_capital
+            roic_str = f"{roic:.1%}" if roic else "N/A"
+
+            # Calculate D/E ratio
+            debt = period.total_debt
+            equity = period.shareholders_equity
+            if debt is not None and equity is not None and equity > 0:
+                de_ratio_str = f"{debt / equity:.2f}"
+            else:
+                de_ratio_str = "N/A"
+
+            shares = period.outstanding_shares
+            shares_str = f"{shares / 1_000_000:.1f}" if shares else "N/A"
+
+            row_data = [
+                year,
+                revenue_str,
+                net_income_str,
+                operating_cashflow_str,
+                fcf_str,
+                gross_margin_str,
+                roic_str,
+                de_ratio_str,
+                shares_str,
+            ]
+
+            row_line = " | ".join(f"{d:>15}" for d in row_data)
+            self.show_info(row_line)
+
+        self.show_info("")
 
 
 # Global CLI instance

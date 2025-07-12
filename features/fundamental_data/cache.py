@@ -437,7 +437,6 @@ class PersistentCache:
         }
 
 
-# Global cache instance
 _cache = PersistentCache()
 
 

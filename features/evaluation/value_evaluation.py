@@ -5,261 +5,9 @@ import json
 from features.llm.llm import call_llm
 from features.evaluation.model import EvaluationSignal
 from features.fundamental_data.model import StockMetaData
+from features.fundamental_data.model import ProcessedFundamentalData
 
 cli = get_cli()
-
-
-def safe_float(value: str | None) -> float | None:
-    """Safely convert string to float, handling None and 'None' strings."""
-    if value is None or value == "None" or value == "":
-        return None
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return None
-
-
-def extract_financial_metrics(fundamental_data: FundamentalData) -> dict:
-    """Extract and combine financial metrics from all reports."""
-    metrics = {}
-
-    # Get the most recent data from each report type
-    if fundamental_data.income_statement:
-        latest_income = fundamental_data.income_statement[0]
-        metrics.update(
-            {
-                "revenue": safe_float(latest_income.total_revenue),
-                "net_income": safe_float(latest_income.net_income),
-                "gross_profit": safe_float(latest_income.gross_profit),
-                "operating_income": safe_float(latest_income.operating_income),
-                "research_and_development": safe_float(
-                    latest_income.research_and_development
-                ),
-                "ebitda": safe_float(latest_income.ebitda),
-            }
-        )
-
-        # Calculate gross margin if possible
-        if metrics.get("revenue") and metrics.get("gross_profit"):
-            metrics["gross_margin"] = metrics["gross_profit"] / metrics["revenue"]
-
-    if fundamental_data.balance_sheet:
-        latest_balance = fundamental_data.balance_sheet[0]
-        metrics.update(
-            {
-                "total_assets": safe_float(latest_balance.total_assets),
-                "shareholders_equity": safe_float(
-                    latest_balance.total_shareholder_equity
-                ),
-                "cash_and_equivalents": safe_float(
-                    latest_balance.cash_and_cash_equivalents_at_carrying_value
-                ),
-                "total_debt": safe_float(latest_balance.short_long_term_debt_total),
-                "goodwill_and_intangible_assets": (
-                    safe_float(latest_balance.goodwill) or 0
-                )
-                + (safe_float(latest_balance.intangible_assets) or 0),
-                "outstanding_shares": safe_float(
-                    latest_balance.common_stock_shares_outstanding
-                ),
-            }
-        )
-
-    if fundamental_data.cash_flow:
-        latest_cashflow = fundamental_data.cash_flow[0]
-        operating_cashflow = safe_float(latest_cashflow.operating_cashflow)
-        capital_expenditures = safe_float(latest_cashflow.capital_expenditures)
-
-        # Calculate free cash flow
-        if operating_cashflow is not None and capital_expenditures is not None:
-            metrics["free_cash_flow"] = (
-                operating_cashflow + capital_expenditures
-            )  # capex is typically negative
-
-        metrics.update(
-            {
-                "operating_cashflow": operating_cashflow,
-                "capital_expenditure": capital_expenditures,
-            }
-        )
-
-    # Extract market cap from overview
-    if fundamental_data.overview and fundamental_data.overview.market_capitalization:
-        metrics["market_cap"] = safe_float(
-            fundamental_data.overview.market_capitalization
-        )
-
-    return metrics
-
-
-def get_financial_time_series(fundamental_data: FundamentalData) -> list[dict]:
-    """Get time series of financial metrics for trend analysis."""
-    time_series = []
-
-    # Get the number of periods available
-    num_periods = min(
-        len(fundamental_data.income_statement),
-        len(fundamental_data.balance_sheet),
-        len(fundamental_data.cash_flow),
-    )
-
-    for i in range(num_periods):
-        period_data = {}
-
-        # Income statement data
-        if i < len(fundamental_data.income_statement):
-            income = fundamental_data.income_statement[i]
-            period_data.update(
-                {
-                    "fiscal_date": income.fiscal_date_ending,
-                    "revenue": safe_float(income.total_revenue),
-                    "net_income": safe_float(income.net_income),
-                    "gross_profit": safe_float(income.gross_profit),
-                    "research_and_development": safe_float(
-                        income.research_and_development
-                    ),
-                }
-            )
-
-            # Calculate gross margin
-            if period_data.get("revenue") and period_data.get("gross_profit"):
-                period_data["gross_margin"] = (
-                    period_data["gross_profit"] / period_data["revenue"]
-                )
-
-        # Balance sheet data
-        if i < len(fundamental_data.balance_sheet):
-            balance = fundamental_data.balance_sheet[i]
-            period_data.update(
-                {
-                    "shareholders_equity": safe_float(balance.total_shareholder_equity),
-                    "total_debt": safe_float(balance.short_long_term_debt_total),
-                    "cash_and_equivalents": safe_float(
-                        balance.cash_and_cash_equivalents_at_carrying_value
-                    ),
-                    "outstanding_shares": safe_float(
-                        balance.common_stock_shares_outstanding
-                    ),
-                    "goodwill_and_intangible_assets": (
-                        safe_float(balance.goodwill) or 0
-                    )
-                    + (safe_float(balance.intangible_assets) or 0),
-                }
-            )
-
-        # Cash flow data
-        if i < len(fundamental_data.cash_flow):
-            cashflow = fundamental_data.cash_flow[i]
-            operating_cf = safe_float(cashflow.operating_cashflow)
-            capex = safe_float(cashflow.capital_expenditures)
-
-            period_data.update(
-                {
-                    "operating_cashflow": operating_cf,
-                    "capital_expenditure": capex,
-                }
-            )
-
-            # Calculate free cash flow
-            if operating_cf is not None and capex is not None:
-                period_data["free_cash_flow"] = (
-                    operating_cf + capex
-                )  # capex is typically negative
-
-        # Calculate ROIC if we have the data
-        if (
-            period_data.get("net_income")
-            and period_data.get("shareholders_equity")
-            and period_data.get("total_debt")
-        ):
-            invested_capital = period_data["shareholders_equity"] + (
-                period_data["total_debt"] or 0
-            )
-            if invested_capital > 0:
-                period_data["return_on_invested_capital"] = (
-                    period_data["net_income"] / invested_capital
-                )
-
-        time_series.append(period_data)
-
-    return time_series
-
-
-def print_financial_time_series(fundamental_data: FundamentalData):
-    """Print the calculated financial time series data as a table."""
-    time_series = get_financial_time_series(fundamental_data)
-
-    if not time_series:
-        cli.show_warning("No financial time series data available")
-        return
-
-    cli.show_info(f"\nFinancial Time Series for {fundamental_data.symbol}")
-    cli.show_info("=" * 80)
-
-    # Header
-    headers = [
-        "Year",
-        "Revenue (M)",
-        "Net Income (M)",
-        "Free Cash Flow (M)",
-        "Gross Margin",
-        "ROIC",
-        "D/E Ratio",
-        "Shares (M)",
-    ]
-
-    # Format the header
-    header_line = " | ".join(f"{h:>15}" for h in headers)
-    cli.show_info(header_line)
-    cli.show_info("-" * len(header_line))
-
-    # Data rows
-    for period in time_series:
-        year = (
-            period.get("fiscal_date", "N/A")[:4] if period.get("fiscal_date") else "N/A"
-        )
-
-        revenue = period.get("revenue")
-        revenue_str = f"{revenue / 1_000_000:.1f}" if revenue else "N/A"
-
-        net_income = period.get("net_income")
-        net_income_str = f"{net_income / 1_000_000:.1f}" if net_income else "N/A"
-
-        fcf = period.get("free_cash_flow")
-        fcf_str = f"{fcf / 1_000_000:.1f}" if fcf else "N/A"
-
-        gross_margin = period.get("gross_margin")
-        gross_margin_str = f"{gross_margin:.1%}" if gross_margin else "N/A"
-
-        roic = period.get("return_on_invested_capital")
-        roic_str = f"{roic:.1%}" if roic else "N/A"
-
-        # Calculate D/E ratio
-        debt = period.get("total_debt")
-        equity = period.get("shareholders_equity")
-        if debt is not None and equity is not None and equity > 0:
-            de_ratio_str = f"{debt / equity:.2f}"
-        else:
-            de_ratio_str = "N/A"
-
-        shares = period.get("outstanding_shares")
-        shares_str = f"{shares / 1_000_000:.1f}" if shares else "N/A"
-
-        row_data = [
-            year,
-            revenue_str,
-            net_income_str,
-            fcf_str,
-            gross_margin_str,
-            roic_str,
-            de_ratio_str,
-            shares_str,
-        ]
-
-        row_line = " | ".join(f"{d:>15}" for d in row_data)
-        cli.show_info(row_line)
-
-    cli.show_info("")
 
 
 def print_analysis_results(analysis_name: str, analysis_result: dict):
@@ -303,32 +51,33 @@ def print_analysis_results(analysis_name: str, analysis_result: dict):
     cli.show_info("")
 
 
-def evaluate(fundamental_data: FundamentalData) -> str:
-    # Print calculated data before analysis
-    print_financial_time_series(fundamental_data)
-
+def evaluate(
+    overview: StockMetaData,
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> str:
     # Perform analyses
     cli.show_progress_start("Business Model: Analyzing business predictability")
     # predictability_analysis = analyze_predictability(fundamental_data)
 
     cli.show_progress_start("MOAT: Analyzing moat strength")
-    moat_analysis = analyze_moat_strength(fundamental_data)
+    moat_analysis = analyze_moat_strength(fundamental_data_time_series)
     cli.show_progress_success("MOAT analysis completed")
     print_analysis_results("MOAT", moat_analysis)
 
     cli.show_progress_start("Management: Analyzing management quality")
-    management_analysis = analyze_management_quality(fundamental_data)
-    cli.show_progress_success("Management analysis completed")
+    management_analysis = analyze_management_quality(fundamental_data_time_series)
     print_analysis_results("Management Quality", management_analysis)
 
     cli.show_progress_start("Margin of Safety: Calculating valuation")
-    valuation_analysis = calculate_margin_of_safety(fundamental_data)
+    valuation_analysis = calculate_margin_of_safety(
+        overview, fundamental_data_time_series
+    )
     cli.show_progress_success("Valuation analysis completed")
     print_analysis_results("Margin of Safety", valuation_analysis)
 
     cli.show_progress_start("Generating final analysis...")
     output = generate_output(
-        fundamental_data.overview,
+        overview,
         moat_analysis,
         management_analysis,
         valuation_analysis,
@@ -343,11 +92,15 @@ def evaluate(fundamental_data: FundamentalData) -> str:
     return output
 
 
-def analyze_predictability(fundamental_data: FundamentalData) -> dict[str, any]:
+def analyze_predictability(
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> dict[str, any]:
     pass
 
 
-def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
+def analyze_moat_strength(
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> dict[str, any]:
     """
     Analyze the business's competitive advantage using value investing approach:
     - Consistent high returns on capital (ROIC)
@@ -358,18 +111,14 @@ def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
     score = 0
     details = []
 
-    # Get financial time series data
-    financial_line_items = get_financial_time_series(fundamental_data)
-    current_metrics = extract_financial_metrics(fundamental_data)
-
-    if not financial_line_items:
+    if not fundamental_data_time_series:
         return {"score": 0, "details": "Insufficient data to analyze moat strength"}
 
     # 1. Return on Invested Capital (ROIC) analysis - Munger's favorite metric
     roic_values = [
-        item["return_on_invested_capital"]
-        for item in financial_line_items
-        if item.get("return_on_invested_capital") is not None
+        item.return_on_invested_capital
+        for item in fundamental_data_time_series
+        if item.return_on_invested_capital is not None
     ]
 
     if roic_values:
@@ -397,9 +146,9 @@ def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
 
     # 2. Pricing power - check gross margin stability and trends
     gross_margins = [
-        item["gross_margin"]
-        for item in financial_line_items
-        if item.get("gross_margin") is not None
+        item.gross_margin
+        for item in fundamental_data_time_series
+        if item.gross_margin is not None
     ]
 
     if gross_margins and len(gross_margins) >= 3:
@@ -423,16 +172,16 @@ def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
         details.append("Insufficient gross margin data")
 
     # 3. Capital intensity - Munger prefers low capex businesses
-    if len(financial_line_items) >= 3:
+    if len(fundamental_data_time_series) >= 3:
         capex_to_revenue = []
-        for item in financial_line_items:
+        for item in fundamental_data_time_series:
             if (
-                item.get("capital_expenditure") is not None
-                and item.get("revenue") is not None
-                and item["revenue"] > 0
+                item.capital_expenditures is not None
+                and item.revenue is not None
+                and item.revenue > 0
             ):
                 # Note: capital_expenditure is typically negative in financial statements
-                capex_ratio = abs(item["capital_expenditure"]) / item["revenue"]
+                capex_ratio = abs(item.capital_expenditures) / item.revenue
                 capex_to_revenue.append(capex_ratio)
 
         if capex_to_revenue:
@@ -458,15 +207,15 @@ def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
 
     # 4. Intangible assets - Munger values R&D and intellectual property
     r_and_d = [
-        item["research_and_development"]
-        for item in financial_line_items
-        if item.get("research_and_development") is not None
+        item.research_and_development
+        for item in fundamental_data_time_series
+        if item.research_and_development is not None
     ]
 
     goodwill_and_intangible_assets = [
-        item["goodwill_and_intangible_assets"]
-        for item in financial_line_items
-        if item.get("goodwill_and_intangible_assets") is not None
+        item.goodwill_and_intangible_assets
+        for item in fundamental_data_time_series
+        if item.goodwill_and_intangible_assets is not None
     ]
 
     if r_and_d and len(r_and_d) > 0:
@@ -486,7 +235,9 @@ def analyze_moat_strength(fundamental_data: FundamentalData) -> dict[str, any]:
     return {"score": final_score, "details": "; ".join(details)}
 
 
-def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, any]:
+def analyze_management_quality(
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> dict[str, any]:
     """
     Evaluate management quality using Munger's criteria:
     - Capital allocation wisdom
@@ -499,9 +250,7 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
     details = []
 
     # Get financial time series data
-    financial_line_items = get_financial_time_series(fundamental_data)
-
-    if not financial_line_items:
+    if not fundamental_data_time_series:
         return {
             "score": 0,
             "details": "Insufficient data to analyze management quality",
@@ -510,15 +259,15 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
     # 1. Capital allocation - Check FCF to net income ratio
     # Munger values companies that convert earnings to cash
     fcf_values = [
-        item["free_cash_flow"]
-        for item in financial_line_items
-        if item.get("free_cash_flow") is not None
+        item.free_cash_flow
+        for item in fundamental_data_time_series
+        if item.free_cash_flow is not None
     ]
 
     net_income_values = [
-        item["net_income"]
-        for item in financial_line_items
-        if item.get("net_income") is not None
+        item.net_income
+        for item in fundamental_data_time_series
+        if item.net_income is not None
     ]
 
     if fcf_values and net_income_values and len(fcf_values) == len(net_income_values):
@@ -554,15 +303,15 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
 
     # 2. Debt management - Munger is cautious about debt
     debt_values = [
-        item["total_debt"]
-        for item in financial_line_items
-        if item.get("total_debt") is not None
+        item.total_debt
+        for item in fundamental_data_time_series
+        if item.total_debt is not None
     ]
 
     equity_values = [
-        item["shareholders_equity"]
-        for item in financial_line_items
-        if item.get("shareholders_equity") is not None
+        item.shareholders_equity
+        for item in fundamental_data_time_series
+        if item.shareholders_equity is not None
     ]
 
     if debt_values and equity_values and len(debt_values) == len(equity_values):
@@ -591,14 +340,14 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
 
     # 3. Cash management efficiency - Munger values appropriate cash levels
     cash_values = [
-        item["cash_and_equivalents"]
-        for item in financial_line_items
-        if item.get("cash_and_equivalents") is not None
+        item.cash_and_equivalents
+        for item in fundamental_data_time_series
+        if item.cash_and_equivalents is not None
     ]
     revenue_values = [
-        item["revenue"]
-        for item in financial_line_items
-        if item.get("revenue") is not None
+        item.revenue
+        for item in fundamental_data_time_series
+        if item.revenue is not None
     ]
 
     if (
@@ -643,9 +392,9 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
 
     # 5. Consistency in share count - Munger prefers stable/decreasing shares
     share_counts = [
-        item["outstanding_shares"]
-        for item in financial_line_items
-        if item.get("outstanding_shares") is not None
+        item.outstanding_shares
+        for item in fundamental_data_time_series
+        if item.outstanding_shares is not None
     ]
 
     if share_counts and len(share_counts) >= 3:
@@ -670,7 +419,10 @@ def analyze_management_quality(fundamental_data: FundamentalData) -> dict[str, a
     return {"score": final_score, "details": "; ".join(details)}
 
 
-def calculate_margin_of_safety(fundamental_data: FundamentalData) -> dict[str, any]:
+def calculate_margin_of_safety(
+    overview: StockMetaData,
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> dict[str, any]:
     """
     Calculate intrinsic value using Munger's approach:
     - Focus on owner earnings (approximated by FCF)
@@ -680,19 +432,14 @@ def calculate_margin_of_safety(fundamental_data: FundamentalData) -> dict[str, a
     score = 0
     details = []
 
-    # Get financial time series and current metrics
-    financial_line_items = get_financial_time_series(fundamental_data)
-    current_metrics = extract_financial_metrics(fundamental_data)
-    market_cap = current_metrics.get("market_cap")
-
-    if not financial_line_items or market_cap is None:
+    if not fundamental_data_time_series or overview.market_capitalization is None:
         return {"score": 0, "details": "Insufficient data to perform valuation"}
 
     # Get FCF values (Munger's preferred "owner earnings" metric)
     fcf_values = [
-        item["free_cash_flow"]
-        for item in financial_line_items
-        if item.get("free_cash_flow") is not None
+        item.free_cash_flow
+        for item in fundamental_data_time_series
+        if item.free_cash_flow is not None
     ]
 
     if not fcf_values or len(fcf_values) < 3:
@@ -712,13 +459,13 @@ def calculate_margin_of_safety(fundamental_data: FundamentalData) -> dict[str, a
         }
 
     # 2. Calculate FCF yield (inverse of P/FCF multiple)
-    if market_cap <= 0:
+    if overview.market_capitalization <= 0:
         return {
             "score": 0,
-            "details": f"Invalid market cap ({market_cap}), cannot value",
+            "details": f"Invalid market cap ({overview.market_capitalization}), cannot value",
         }
 
-    fcf_yield = normalized_fcf / market_cap
+    fcf_yield = normalized_fcf / overview.market_capitalization
 
     # 3. Apply Munger's FCF multiple based on business quality
     # Munger would pay higher multiples for wonderful businesses
@@ -742,7 +489,9 @@ def calculate_margin_of_safety(fundamental_data: FundamentalData) -> dict[str, a
     optimistic_value = normalized_fcf * 20  # 20x FCF = 5% yield
 
     # 5. Calculate margins of safety
-    current_to_reasonable = (reasonable_value - market_cap) / market_cap
+    current_to_reasonable = (
+        reasonable_value - overview.market_capitalization
+    ) / overview.market_capitalization
 
     if current_to_reasonable > 0.3:  # >30% upside
         score += 3
@@ -877,3 +626,8 @@ def generate_output(
         prompt=prompt,
         pydantic_model=EvaluationSignal,
     )
+
+
+def extract_financial_metrics(fundamental_data: FundamentalData) -> dict:
+    # Implementation of extract_financial_metrics function
+    pass

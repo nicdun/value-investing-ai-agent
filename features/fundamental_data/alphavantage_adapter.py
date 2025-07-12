@@ -39,8 +39,6 @@ class AlphaVantageAPI:
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
-            print(f"AlphaVantage API response: {data}")
-            # Extract best matches
             best_matches = data.get("bestMatches", [])
 
             # Cache the individual symbol results for future intelligent matching
@@ -117,12 +115,16 @@ class AlphaVantageAPI:
             # Process annual reports
             if "annualReports" in data:
                 for report in data["annualReports"]:
-                    balance_sheet_reports.append(BalanceSheetReport(**report))
+                    balance_sheet_reports.append(
+                        BalanceSheetReport(**report, annual_report=True)
+                    )
 
             # Process quarterly reports
             if "quarterlyReports" in data:
                 for report in data["quarterlyReports"]:
-                    balance_sheet_reports.append(BalanceSheetReport(**report))
+                    balance_sheet_reports.append(
+                        BalanceSheetReport(**report, quarter_report=True)
+                    )
 
             # Cache the data
             cache.set_balance_sheet(symbol, balance_sheet_reports)
@@ -162,12 +164,16 @@ class AlphaVantageAPI:
             # Process annual reports
             if "annualReports" in data:
                 for report in data["annualReports"]:
-                    cash_flow_reports.append(CashFlowReport(**report))
+                    cash_flow_reports.append(
+                        CashFlowReport(**report, annual_report=True)
+                    )
 
             # Process quarterly reports
             if "quarterlyReports" in data:
                 for report in data["quarterlyReports"]:
-                    cash_flow_reports.append(CashFlowReport(**report))
+                    cash_flow_reports.append(
+                        CashFlowReport(**report, quarter_report=True)
+                    )
 
             # Cache the data
             cache.set_cash_flow(symbol, cash_flow_reports)
@@ -207,12 +213,16 @@ class AlphaVantageAPI:
             # Process annual reports
             if "annualReports" in data:
                 for report in data["annualReports"]:
-                    income_statement_reports.append(IncomeStatementReport(**report))
+                    income_statement_reports.append(
+                        IncomeStatementReport(**report, annual_report=True)
+                    )
 
             # Process quarterly reports
             if "quarterlyReports" in data:
                 for report in data["quarterlyReports"]:
-                    income_statement_reports.append(IncomeStatementReport(**report))
+                    income_statement_reports.append(
+                        IncomeStatementReport(**report, quarter_report=True)
+                    )
 
             # Cache the data
             cache.set_income_statement(symbol, income_statement_reports)
@@ -254,18 +264,3 @@ class AlphaVantageAPI:
             calculated_metrics=calculated_metrics,
             last_updated=datetime.now().isoformat(),
         )
-
-    @staticmethod
-    def clear_cache(symbol: str | None = None):
-        """Clear cache for a specific symbol or all symbols."""
-        cache.clear_cache(symbol)
-
-    @staticmethod
-    def get_cached_symbols() -> list[str]:
-        """Get list of all cached symbols."""
-        return cache.get_cached_symbols()
-
-    @staticmethod
-    def has_cached_data(symbol: str, data_type: str) -> bool:
-        """Check if specific data type is cached for a symbol."""
-        return cache.has_cached_data(symbol, data_type)

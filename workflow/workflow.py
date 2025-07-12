@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from config.env import GOOGLE_API_KEY
 from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
 from features.fundamental_data.model import FundamentalData
+from features.fundamental_data.processor import get_fundamental_data_time_series
 from features.llm.google_genai import get_google_genai_llm
 from features.evaluation.value_evaluation import evaluate
 from features.research.firecrawl_adapter import FirecrawlAdapter
@@ -250,26 +251,7 @@ class Workflow:
                 cash_flow=cash_flow_result.data or [],
             )
 
-            # Display summary
-            summary_data = {
-                "symbol": state.ticker_symbol,
-                "company_name": overview_result.data.name
-                if overview_result.data
-                else "",
-                "overview": overview_result.data,
-                "data_counts": {
-                    "balance_sheet_periods": len(balance_sheet_result.data)
-                    if balance_sheet_result.data
-                    else 0,
-                    "income_statement_periods": len(income_statement_result.data)
-                    if income_statement_result.data
-                    else 0,
-                    "cash_flow_periods": len(cash_flow_result.data)
-                    if cash_flow_result.data
-                    else 0,
-                },
-            }
-            self.cli.display_analysis_summary(summary_data)
+            self.cli.display_analysis_summary(overview_result.data)
 
             return {"fundamental_data": fundamental_data}
 
@@ -284,7 +266,18 @@ class Workflow:
 
         self.cli.show_progress_start("Analyzing fundamental data...")
 
-        calculated_metrics = evaluate(state.fundamental_data)
+        annual_anaylsis = True
+        fundamental_data_time_series = get_fundamental_data_time_series(
+            state.fundamental_data, annual_anaylsis
+        )
+
+        self.cli.print_fundamental_data_time_series(
+            state.ticker_symbol, fundamental_data_time_series
+        )
+
+        calculated_metrics = evaluate(
+            state.fundamental_data.overview, fundamental_data_time_series
+        )
 
         self.cli.show_progress_success("Fundamental data analysis completed")
 

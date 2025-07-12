@@ -19,5 +19,4 @@ class ResearchState(BaseModel):
     evaluation: ValueEvaluation = None
     reports: list[PDFDocument] = []
     news: list[dict] = []
-    investment_decision: str = ""
     report: str = ""
