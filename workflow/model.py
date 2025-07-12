@@ -5,7 +5,7 @@ from langgraph.graph.message import add_messages
 from typing import Annotated, Optional, List
 from datetime import datetime
 from features.research.model import PDFDocument
-from features.evaluation.model import ValueEvaluation
+from features.evaluation.model import ValueEvaluation, EvaluationSignal
 
 
 class Metrics(BaseModel):
@@ -19,4 +19,4 @@ class ResearchState(BaseModel):
     evaluation: ValueEvaluation = None
     reports: list[PDFDocument] = []
     news: list[dict] = []
-    report: str = ""
+    report: EvaluationSignal = None

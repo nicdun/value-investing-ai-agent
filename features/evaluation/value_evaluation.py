@@ -6,6 +6,7 @@ from features.llm.llm import call_llm
 from features.evaluation.model import EvaluationSignal
 from features.fundamental_data.model import StockMetaData
 from features.fundamental_data.model import ProcessedFundamentalData
+from features.evaluation.kpi_calculation import calculate_average_growth_rate
 
 cli = get_cli()
 
@@ -37,18 +38,20 @@ def print_analysis_results(analysis_name: str, analysis_result: dict):
     if details:
         cli.show_info(f"📝 Details: {details}")
 
-    # Show additional metrics for valuation analysis
-    if "intrinsic_value_range" in analysis_result:
-        cli.show_info("\n💰 Valuation Metrics:")
-        intrinsic_range = analysis_result["intrinsic_value_range"]
-        cli.show_info(f"   Conservative Value: ${intrinsic_range['conservative']:,.0f}")
-        cli.show_info(f"   Reasonable Value:   ${intrinsic_range['reasonable']:,.0f}")
-        cli.show_info(f"   Optimistic Value:   ${intrinsic_range['optimistic']:,.0f}")
-
-        fcf_yield = analysis_result.get("fcf_yield", 0)
-        cli.show_info(f"   FCF Yield:          {fcf_yield:.1%}")
-
     cli.show_info("")
+
+
+def print_valuation_metrics(analysis_result: dict, market_capitalization: float):
+    # Show additional metrics for valuation analysis
+    cli.show_info("\n💰 Valuation Metrics:")
+    intrinsic_range = analysis_result["intrinsic_value_range"]
+    cli.show_info(f"   Conservative Value: ${intrinsic_range['conservative']:,.0f}")
+    cli.show_info(f"   Reasonable Value:   ${intrinsic_range['reasonable']:,.0f}")
+    cli.show_info(f"   Optimistic Value:   ${intrinsic_range['optimistic']:,.0f}")
+    cli.show_info(f"   Actual Value (MCap): ${market_capitalization:,.0f}")
+
+    fcf_yield = analysis_result.get("fcf_yield", 0)
+    cli.show_info(f"   FCF Yield:          {fcf_yield:.1%}")
 
 
 def evaluate(
@@ -58,6 +61,11 @@ def evaluate(
     # Perform analyses
     cli.show_progress_start("Business Model: Analyzing business predictability")
     # predictability_analysis = analyze_predictability(fundamental_data)
+
+    cli.show_progress_start("Growth Rates: Analyzing growth rates")
+    growth_rates_analysis = analyze_growth_rates(fundamental_data_time_series)
+    cli.show_progress_success("Growth rates analysis completed")
+    print_analysis_results("Growth Rates", growth_rates_analysis)
 
     cli.show_progress_start("MOAT: Analyzing moat strength")
     moat_analysis = analyze_moat_strength(fundamental_data_time_series)
@@ -74,10 +82,12 @@ def evaluate(
     )
     cli.show_progress_success("Valuation analysis completed")
     print_analysis_results("Margin of Safety", valuation_analysis)
+    print_valuation_metrics(valuation_analysis, overview.market_capitalization)
 
     cli.show_progress_start("Generating final analysis...")
     output = generate_output(
         overview,
+        growth_rates_analysis,
         moat_analysis,
         management_analysis,
         valuation_analysis,
@@ -103,7 +113,6 @@ def analyze_moat_strength(
 ) -> dict[str, any]:
     """
     Analyze the business's competitive advantage using value investing approach:
-    - Consistent high returns on capital (ROIC)
     - Pricing power (stable/improving gross margins)
     - Low capital requirements
     - Network effects and intangible assets (R&D investments, goodwill)
@@ -114,37 +123,7 @@ def analyze_moat_strength(
     if not fundamental_data_time_series:
         return {"score": 0, "details": "Insufficient data to analyze moat strength"}
 
-    # 1. Return on Invested Capital (ROIC) analysis - Munger's favorite metric
-    roic_values = [
-        item.return_on_invested_capital
-        for item in fundamental_data_time_series
-        if item.return_on_invested_capital is not None
-    ]
-
-    if roic_values:
-        # Check if ROIC consistently above 15% (Munger's threshold)
-        high_roic_count = sum(1 for r in roic_values if r > 0.15)
-        if high_roic_count >= len(roic_values) * 0.8:  # 80% of periods show high ROIC
-            score += 3
-            details.append(
-                f"Excellent ROIC: >15% in {high_roic_count}/{len(roic_values)} periods"
-            )
-        elif high_roic_count >= len(roic_values) * 0.5:  # 50% of periods
-            score += 2
-            details.append(
-                f"Good ROIC: >15% in {high_roic_count}/{len(roic_values)} periods"
-            )
-        elif high_roic_count > 0:
-            score += 1
-            details.append(
-                f"Mixed ROIC: >15% in only {high_roic_count}/{len(roic_values)} periods"
-            )
-        else:
-            details.append("Poor ROIC: Never exceeds 15% threshold")
-    else:
-        details.append("No ROIC data available")
-
-    # 2. Pricing power - check gross margin stability and trends
+    # Pricing power - check gross margin stability and trends
     gross_margins = [
         item.gross_margin
         for item in fundamental_data_time_series
@@ -152,7 +131,7 @@ def analyze_moat_strength(
     ]
 
     if gross_margins and len(gross_margins) >= 3:
-        # Munger likes stable or improving gross margins
+        # Stable or improving gross margins
         margin_trend = sum(
             1
             for i in range(1, len(gross_margins))
@@ -171,7 +150,7 @@ def analyze_moat_strength(
     else:
         details.append("Insufficient gross margin data")
 
-    # 3. Capital intensity - Munger prefers low capex businesses
+    # Capital intensity
     if len(fundamental_data_time_series) >= 3:
         capex_to_revenue = []
         for item in fundamental_data_time_series:
@@ -205,8 +184,8 @@ def analyze_moat_strength(
     else:
         details.append("Insufficient data for capital intensity analysis")
 
-    # 4. Intangible assets - Munger values R&D and intellectual property
-    r_and_d = [
+    # Intangible assets
+    research_and_development = [
         item.research_and_development
         for item in fundamental_data_time_series
         if item.research_and_development is not None
@@ -218,8 +197,8 @@ def analyze_moat_strength(
         if item.goodwill_and_intangible_assets is not None
     ]
 
-    if r_and_d and len(r_and_d) > 0:
-        if sum(r_and_d) > 0:  # If company is investing in R&D
+    if research_and_development and len(research_and_development) > 0:
+        if sum(research_and_development) > 0:  # If company is investing in R&D
             score += 1
             details.append("Invests in R&D, building intellectual property")
 
@@ -230,21 +209,68 @@ def analyze_moat_strength(
         )
 
     # Scale score to 0-10 range
-    final_score = min(10, score * 10 / 9)  # Max possible raw score is 9
+    final_score = min(10, score * 10 / 6)  # Max possible raw score is 6
 
     return {"score": final_score, "details": "; ".join(details)}
+
+
+def analyze_growth_rates(
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> dict[str, any]:
+    """
+    Analyze the business's growth rates using value investing approach:
+    - Revenue growth
+    - Equity growth
+    - Net income growth
+    - operating cashflow growth
+    """
+    score = 0
+    details = []
+
+    # Define metrics to analyze with their specific scoring parameters
+    metrics = [
+        ("revenue", "revenue", 0.1, 0.05),
+        ("equity", "shareholders_equity", 0.1, 0.05),
+        ("net income", "net_income", 0.1, 0.05),
+        ("operating cashflow", "operating_cashflow", 0.1, 0.05),
+        ("free cashflow", "free_cash_flow", 0.1, 0.10),
+    ]
+
+    for (
+        metric_name,
+        attribute_name,
+        excellent_threshold,
+        good_threshold,
+    ) in metrics:
+        # Extract values for the metric
+        values = [
+            getattr(item, attribute_name)
+            for item in fundamental_data_time_series
+            if getattr(item, attribute_name) is not None
+        ]
+        metric_score, metric_details = calculate_average_growth_rate(
+            values=values,
+            metric_name=metric_name,
+            excellent_threshold=excellent_threshold,
+            good_threshold=good_threshold,
+        )
+        score += metric_score
+        details.extend(metric_details)
+
+    final_score = max(0, min(10, score * 10 / (len(metrics) * 2)))
+
+    return {"score": score, "details": "; ".join(details)}
 
 
 def analyze_management_quality(
     fundamental_data_time_series: list[ProcessedFundamentalData],
 ) -> dict[str, any]:
     """
-    Evaluate management quality using Munger's criteria:
+    Evaluate management quality using rule1 criteria:
+    - ROIC > 10%
+    - ROE > 15%
     - Capital allocation wisdom
-    - Insider ownership and transactions
     - Cash management efficiency
-    - Candor and transparency
-    - Long-term focus
     """
     score = 0
     details = []
@@ -256,8 +282,66 @@ def analyze_management_quality(
             "details": "Insufficient data to analyze management quality",
         }
 
-    # 1. Capital allocation - Check FCF to net income ratio
-    # Munger values companies that convert earnings to cash
+    # 1. Return on Invested Capital (ROIC) analysis
+    roic_values = [
+        item.return_on_invested_capital
+        for item in fundamental_data_time_series
+        if item.return_on_invested_capital is not None
+    ]
+
+    if roic_values:
+        # Check if ROIC consistently above 10%
+        high_roic_count = sum(1 for r in roic_values if r > 0.10)
+        if high_roic_count >= len(roic_values) * 0.8:  # 80% of periods show high ROIC
+            score += 3
+            details.append(
+                f"Excellent ROIC: >10% in {high_roic_count}/{len(roic_values)} periods"
+            )
+        elif high_roic_count >= len(roic_values) * 0.5:  # 50% of periods
+            score += 2
+            details.append(
+                f"Good ROIC: >10% in {high_roic_count}/{len(roic_values)} periods"
+            )
+        elif high_roic_count > 0:
+            score += 1
+            details.append(
+                f"Mixed ROIC: >10% in only {high_roic_count}/{len(roic_values)} periods"
+            )
+        else:
+            details.append("Poor ROIC: Never exceeds 10% threshold")
+    else:
+        details.append("No ROIC data available")
+
+    roe_values = [
+        item.return_on_equity
+        for item in fundamental_data_time_series
+        if item.return_on_equity is not None
+    ]
+    if roe_values:
+        # Check if ROE consistently above 15%
+        high_roe_count = sum(1 for r in roe_values if r > 0.15)
+        if high_roe_count >= len(roe_values) * 0.8:  # 80% of periods show high ROIC
+            score += 3
+            details.append(
+                f"Excellent ROE: >15% in {high_roe_count}/{len(roe_values)} periods"
+            )
+        elif high_roe_count >= len(roe_values) * 0.5:  # 50% of periods
+            score += 2
+            details.append(
+                f"Good ROE: >15% in {high_roe_count}/{len(roe_values)} periods"
+            )
+        elif high_roe_count > 0:
+            score += 1
+            details.append(
+                f"Mixed ROE: >15% in only {high_roe_count}/{len(roe_values)} periods"
+            )
+        else:
+            details.append("Poor ROE: Never exceeds 15% threshold")
+    else:
+        details.append("No ROE data available")
+
+    # Capital allocation - Check FCF to net income ratio
+    # Companies that convert earnings to cash
     fcf_values = [
         item.free_cash_flow
         for item in fundamental_data_time_series
@@ -301,24 +385,15 @@ def analyze_management_quality(
     else:
         details.append("Missing FCF or Net Income data")
 
-    # 2. Debt management - Munger is cautious about debt
-    debt_values = [
-        item.total_debt
+    # Debt management
+    debt_to_equity_values = [
+        item.debt_to_equity_ratio
         for item in fundamental_data_time_series
-        if item.total_debt is not None
+        if item.debt_to_equity_ratio is not None
     ]
 
-    equity_values = [
-        item.shareholders_equity
-        for item in fundamental_data_time_series
-        if item.shareholders_equity is not None
-    ]
-
-    if debt_values and equity_values and len(debt_values) == len(equity_values):
-        # Calculate D/E ratio for most recent period
-        recent_de_ratio = (
-            debt_values[0] / equity_values[0] if equity_values[0] > 0 else float("inf")
-        )
+    if debt_to_equity_values and len(debt_to_equity_values) > 0:
+        recent_de_ratio = debt_to_equity_values[0]
 
         if recent_de_ratio < 0.3:  # Very low debt
             score += 3
@@ -333,12 +408,24 @@ def analyze_management_quality(
         elif recent_de_ratio < 1.5:  # Higher but still reasonable debt
             score += 1
             details.append(f"Moderate debt level: D/E ratio of {recent_de_ratio:.2f}")
-        else:
+        elif recent_de_ratio < 2.0:
+            score += 0
             details.append(f"High debt level: D/E ratio of {recent_de_ratio:.2f}")
+        elif recent_de_ratio < 3.0:
+            score -= 1
+            details.append(f"Very high debt level: D/E ratio of {recent_de_ratio:.2f}")
+        else:
+            score -= 3
+            details.append(
+                f"Unacceptable debt level: D/E ratio of {recent_de_ratio:.2f}"
+            )
     else:
         details.append("Missing debt or equity data")
 
-    # 3. Cash management efficiency - Munger values appropriate cash levels
+    # debt to earnings
+    # TODO
+
+    # Cash management efficiency
     cash_values = [
         item.cash_and_equivalents
         for item in fundamental_data_time_series
@@ -386,11 +473,7 @@ def analyze_management_quality(
     else:
         details.append("Insufficient cash or revenue data")
 
-    # 4. Insider activity - Note: Not available in current data model
-    # This would require additional data sources
-    details.append("Insider trading data not available in current dataset")
-
-    # 5. Consistency in share count - Munger prefers stable/decreasing shares
+    # Consistency in share count
     share_counts = [
         item.outstanding_shares
         for item in fundamental_data_time_series
@@ -413,8 +496,8 @@ def analyze_management_quality(
         details.append("Insufficient share count data")
 
     # Scale score to 0-10 range
-    # Maximum possible raw score would be 10 (3+3+2+2) minus penalties
-    final_score = max(0, min(10, score * 10 / 10))
+    # Maximum possible raw score would be 10 (3+3+3+3+2+2) minus penalties
+    final_score = max(0, min(10, score * 10 / 16))
 
     return {"score": final_score, "details": "; ".join(details)}
 
@@ -435,7 +518,7 @@ def calculate_margin_of_safety(
     if not fundamental_data_time_series or overview.market_capitalization is None:
         return {"score": 0, "details": "Insufficient data to perform valuation"}
 
-    # Get FCF values (Munger's preferred "owner earnings" metric)
+    # Get FCF values ("owner earnings")
     fcf_values = [
         item.free_cash_flow
         for item in fundamental_data_time_series
@@ -445,8 +528,7 @@ def calculate_margin_of_safety(
     if not fcf_values or len(fcf_values) < 3:
         return {"score": 0, "details": "Insufficient free cash flow data for valuation"}
 
-    # 1. Normalize earnings by taking average of last 3-5 years
-    # (Munger prefers to normalize earnings to avoid over/under-valuation based on cyclical factors)
+    # Normalize earnings by taking average of last 3-5 years
     normalized_fcf = sum(fcf_values[: min(5, len(fcf_values))]) / min(
         5, len(fcf_values)
     )
@@ -458,7 +540,7 @@ def calculate_margin_of_safety(
             "intrinsic_value": None,
         }
 
-    # 2. Calculate FCF yield (inverse of P/FCF multiple)
+    # Calculate FCF yield (inverse of P/FCF multiple)
     if overview.market_capitalization <= 0:
         return {
             "score": 0,
@@ -467,70 +549,62 @@ def calculate_margin_of_safety(
 
     fcf_yield = normalized_fcf / overview.market_capitalization
 
-    # 3. Apply Munger's FCF multiple based on business quality
-    # Munger would pay higher multiples for wonderful businesses
+    # FCF multiple based on business quality
     # Let's use a sliding scale where higher FCF yields are more attractive
-    if fcf_yield > 0.08:  # >8% FCF yield (P/FCF < 12.5x)
+    # 10 Cap
+    if fcf_yield > 0.1:
         score += 4
-        details.append(f"Excellent value: {fcf_yield:.1%} FCF yield")
-    elif fcf_yield > 0.05:  # >5% FCF yield (P/FCF < 20x)
+        details.append(f"Perfect value: {fcf_yield:.1%} FCF yield")
+    elif fcf_yield > 0.08:
         score += 3
+        details.append(f"Excellent value: {fcf_yield:.1%} FCF yield")
+    elif fcf_yield > 0.05:
+        score += 2
         details.append(f"Good value: {fcf_yield:.1%} FCF yield")
-    elif fcf_yield > 0.03:  # >3% FCF yield (P/FCF < 33x)
+    elif fcf_yield > 0.03:
         score += 1
         details.append(f"Fair value: {fcf_yield:.1%} FCF yield")
     else:
         details.append(f"Expensive: Only {fcf_yield:.1%} FCF yield")
 
-    # 4. Calculate simple intrinsic value range
-    # Munger tends to use straightforward valuations, avoiding complex DCF models
+    # Calculate simple intrinsic value range
+    # we use 10 cap as base line evaluation
     conservative_value = normalized_fcf * 10  # 10x FCF = 10% yield
     reasonable_value = normalized_fcf * 15  # 15x FCF ≈ 6.7% yield
     optimistic_value = normalized_fcf * 20  # 20x FCF = 5% yield
 
-    # 5. Calculate margins of safety
-    current_to_reasonable = (
-        reasonable_value - overview.market_capitalization
+    # Calculate margins of safety
+    current_to_conservative = (
+        conservative_value - overview.market_capitalization
     ) / overview.market_capitalization
 
-    if current_to_reasonable > 0.3:  # >30% upside
+    if current_to_conservative > 0.5:  # >50% MOS
+        score += 4
+        details.append(
+            f"Large margin of safety: {current_to_conservative:.1%} upside to conservative value"
+        )
+    elif current_to_conservative > 0.3:  # >30% MOS
         score += 3
         details.append(
-            f"Large margin of safety: {current_to_reasonable:.1%} upside to reasonable value"
+            f"Moderate margin of safety: {current_to_conservative:.1%} upside to conservative value"
         )
-    elif current_to_reasonable > 0.1:  # >10% upside
+    elif current_to_conservative > 0.2:  # >20% MOS
         score += 2
         details.append(
-            f"Moderate margin of safety: {current_to_reasonable:.1%} upside to reasonable value"
+            f"Moderate margin of safety: {current_to_conservative:.1%} upside to conservative value"
         )
-    elif current_to_reasonable > -0.1:  # Within 10% of reasonable value
-        score += 1
+    elif current_to_conservative > -0.1:  # value is fair but not MOS
+        score += 0
         details.append(
-            f"Fair price: Within 10% of reasonable value ({current_to_reasonable:.1%})"
+            f"Fair price: Within 10% of conservative value ({current_to_conservative:.1%})"
         )
     else:
         details.append(
-            f"Expensive: {-current_to_reasonable:.1%} premium to reasonable value"
+            f"Expensive: {-current_to_conservative:.1%} premium to conservative value"
         )
 
-    # 6. Check earnings trajectory for additional context
-    # Munger likes growing owner earnings
-    if len(fcf_values) >= 3:
-        recent_avg = sum(fcf_values[:3]) / 3
-        older_avg = sum(fcf_values[-3:]) / 3 if len(fcf_values) >= 6 else fcf_values[-1]
-
-        if recent_avg > older_avg * 1.2:  # >20% growth in FCF
-            score += 3
-            details.append("Growing FCF trend adds to intrinsic value")
-        elif recent_avg > older_avg:
-            score += 2
-            details.append("Stable to growing FCF supports valuation")
-        else:
-            details.append("Declining FCF trend is concerning")
-
     # Scale score to 0-10 range
-    # Maximum possible raw score would be 10 (4+3+3)
-    final_score = min(10, score * 10 / 10)
+    final_score = min(10, score * 10 / (4 + 4))
 
     return {
         "score": final_score,
@@ -547,10 +621,11 @@ def calculate_margin_of_safety(
 
 def generate_output(
     overview: StockMetaData,
+    growth_rates_analysis: dict[str, any],
     moat_analysis: dict[str, any],
     management_analysis: dict[str, any],
     valuation_analysis: dict[str, any],
-):
+) -> EvaluationSignal:
     """
     Generates investment decisions in value investing style
     """
@@ -565,15 +640,16 @@ def generate_output(
                 3. Look for strong, durable competitive advantages (moats).
                 4. Emphasize long-term thinking and patience.
                 5. Value management integrity and competence.
-                6. Prioritize businesses with high returns on invested capital.
+                6. Prioritize businesses with high returns on invested capital and return on equity.
                 7. Pay a fair price for wonderful businesses.
                 8. Never overpay, always demand a margin of safety.
                 9. Avoid complexity and businesses you don't understand.
                 10. "Invert, always invert" - focus on avoiding stupidity rather than seeking brilliance.
                 
                 Rules:
+                - Praise businesses with growing key growth rates revenue, income, operating cash flow and shareholder equity.
                 - Praise businesses with predictable, consistent operations and cash flows.
-                - Value businesses with high ROIC and pricing power.
+                - Value businesses with high ROIC, ROE and pricing power.
                 - Prefer simple businesses with understandable economics.
                 - Admire management with skin in the game and shareholder-friendly capital allocation.
                 - Focus on long-term economics rather than short-term metrics.
@@ -584,9 +660,9 @@ def generate_output(
                 When providing your reasoning, be thorough and specific by:
                 1. Explaining the key factors that influenced your decision the most (both positive and negative)
                 2. Applying at least 2-3 specific mental models or disciplines to explain your thinking
-                3. Providing quantitative evidence where relevant (e.g., specific ROIC values, margin trends)
+                3. Providing quantitative evidence where relevant (e.g., specific ROIC/ROE values, margin trends, growth rates)
                 4. Citing what you would "avoid" in your analysis (invert the problem)
-                5. Using Charlie Munger's direct, pithy conversational style in your explanation
+                5. Using direct, clear conversational style in your explanation
                 
                 For example, if bullish: "The high ROIC of 22% demonstrates the company's moat. When applying basic microeconomics, we can see that competitors would struggle to..."
                 For example, if bearish: "I see this business making a classic mistake in capital allocation. As I've often said about [relevant Mungerism], this company appears to be..."
@@ -598,6 +674,9 @@ def generate_output(
 
                 Overview for {ticker}:
                 {overview}
+
+                Growth rates analysis for {ticker}:
+                {growth_rates_analysis}
 
                 Moat analysis for {ticker}:
                 {moat_analysis}
@@ -616,6 +695,7 @@ def generate_output(
         {
             "ticker": overview.symbol,
             "overview": json.dumps(overview.model_dump(), indent=2),
+            "growth_rates_analysis": json.dumps(growth_rates_analysis, indent=2),
             "moat_analysis": json.dumps(moat_analysis, indent=2),
             "management_analysis": json.dumps(management_analysis, indent=2),
             "valuation_analysis": json.dumps(valuation_analysis, indent=2),

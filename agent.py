@@ -1,5 +1,6 @@
 from workflow.workflow import Workflow
-from ui.cli import get_cli
+from workflow.model import ResearchState
+from ui.cli import get_cli, StockResearchCLI
 import json
 import sys
 
@@ -35,7 +36,6 @@ def main():
                         break  # Break inner loop to start new analysis
 
                     elif option == "exit":
-                        cli.goodbye()
                         return
 
                     else:
@@ -62,7 +62,7 @@ def main():
         cli.goodbye()
 
 
-def display_detailed_report(state, cli):
+def display_detailed_report(state: ResearchState, cli: StockResearchCLI):
     """Display the detailed analysis report."""
     if not state.report:
         cli.display_error("No report available to display.")
@@ -83,7 +83,7 @@ def display_detailed_report(state, cli):
     cli.display_info("=" * 60)
 
     # Display the main report content
-    print("\n" + state.report + "\n")
+    print("\n" + state.report.report + "\n")
 
     cli.display_info("=" * 60)
     input("Press Enter to continue...")

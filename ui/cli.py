@@ -244,27 +244,24 @@ class StockResearchCLI:
             return
 
         self.show_info(f"\nFinancial Time Series for {symbol}")
-        self.show_info("=" * 80)
+        self.show_info("=" * 140)
 
-        # Header
+        # Headers
         headers = [
             "Year",
             "Revenue (M)",
             "Net Income (M)",
-            "Operating Cashflow (M)",
+            "Operating CashFlow (M)",
             "Free Cash Flow (M)",
             "Gross Margin",
             "ROIC",
+            "ROE",
             "D/E Ratio",
             "Shares (M)",
         ]
 
-        # Format the header
-        header_line = " | ".join(f"{h:>15}" for h in headers)
-        self.show_info(header_line)
-        self.show_info("-" * len(header_line))
-
-        # Data rows
+        # Prepare all data rows first to calculate column widths
+        data_rows = []
         for period in time_series:
             year = period.fiscal_date_ending[:4] if period.fiscal_date_ending else "N/A"
 
@@ -287,13 +284,11 @@ class StockResearchCLI:
             roic = period.return_on_invested_capital
             roic_str = f"{roic:.1%}" if roic else "N/A"
 
-            # Calculate D/E ratio
-            debt = period.total_debt
-            equity = period.shareholders_equity
-            if debt is not None and equity is not None and equity > 0:
-                de_ratio_str = f"{debt / equity:.2f}"
-            else:
-                de_ratio_str = "N/A"
+            roe = period.return_on_equity
+            roe_str = f"{roe:.1%}" if roe else "N/A"
+
+            debt_to_equity = period.debt_to_equity_ratio
+            debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity else "N/A"
 
             shares = period.outstanding_shares
             shares_str = f"{shares / 1_000_000:.1f}" if shares else "N/A"
@@ -306,11 +301,37 @@ class StockResearchCLI:
                 fcf_str,
                 gross_margin_str,
                 roic_str,
-                de_ratio_str,
+                roe_str,
+                debt_to_equity_str,
                 shares_str,
             ]
+            data_rows.append(row_data)
 
-            row_line = " | ".join(f"{d:>15}" for d in row_data)
+        # Calculate column widths
+        column_widths = []
+        for i, header in enumerate(headers):
+            # Start with header width
+            max_width = len(header)
+
+            # Check all data rows for this column
+            for row in data_rows:
+                if i < len(row):
+                    max_width = max(max_width, len(str(row[i])))
+
+            # Add some padding
+            column_widths.append(max_width + 2)
+
+        # Format and print header
+        header_line = " | ".join(f"{h:>{w}}" for h, w in zip(headers, column_widths))
+        self.show_info(header_line)
+
+        # Print separator line
+        separator_line = "-+-".join("-" * w for w in column_widths)
+        self.show_info(separator_line)
+
+        # Print data rows
+        for row in data_rows:
+            row_line = " | ".join(f"{d:>{w}}" for d, w in zip(row, column_widths))
             self.show_info(row_line)
 
         self.show_info("")

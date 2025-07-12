@@ -275,13 +275,13 @@ class Workflow:
             state.ticker_symbol, fundamental_data_time_series
         )
 
-        calculated_metrics = evaluate(
+        analysis_output = evaluate(
             state.fundamental_data.overview, fundamental_data_time_series
         )
 
         self.cli.show_progress_success("Fundamental data analysis completed")
 
-        return {"calculated_metrics": calculated_metrics}
+        return {"report": analysis_output}
 
     def _web_research(self, state: ResearchState) -> dict:
         """Perform web research for the company."""

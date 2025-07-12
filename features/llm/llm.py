@@ -19,8 +19,8 @@ def call_llm(
             method="json_mode",
         )
         response = llm.invoke(prompt)
-        cli.display_info(f"LLM response: {response}")
-        return pydantic_model.model_validate_json(response)
+        pydantic_model.model_validate(response)
+        return response
     except Exception as e:
         cli.display_error(f"LLM call failed: {e}")
         raise e
