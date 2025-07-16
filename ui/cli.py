@@ -244,25 +244,31 @@ class StockResearchCLI:
             return
 
         self.show_info(f"\nFinancial Time Series for {symbol}")
-        self.show_info("=" * 140)
+        self.show_info("=" * 130)
 
         # Headers
         headers = [
             "Year",
             "Revenue (M)",
+            "Rev%",
             "Net Income (M)",
-            "Operating CashFlow (M)",
-            "Free Cash Flow (M)",
+            "NI%",
+            "Operating CF (M)",
+            "OCF%",
+            "Free CF (M)",
+            "FCF%",
             "Gross Margin",
             "ROIC",
             "ROE",
-            "D/E Ratio",
+            "D/E",
             "Shares (M)",
         ]
 
         # Prepare all data rows first to calculate column widths
         data_rows = []
-        for period in time_series:
+        colored_rows = []  # Store colored versions for display
+
+        for i, period in enumerate(time_series):
             year = period.fiscal_date_ending[:4] if period.fiscal_date_ending else "N/A"
 
             revenue = period.revenue
@@ -277,6 +283,44 @@ class StockResearchCLI:
             )
             fcf = period.free_cash_flow
             fcf_str = f"{fcf / 1_000_000:.1f}" if fcf else "N/A"
+
+            # Calculate growth rates compared to previous year
+            revenue_growth_str = "N/A"
+            net_income_growth_str = "N/A"
+            operating_cf_growth_str = "N/A"
+            fcf_growth_str = "N/A"
+
+            if i < len(time_series) - 1:  # Not the oldest year
+                prev_period = time_series[i + 1]
+
+                # Revenue growth
+                if revenue and prev_period.revenue:
+                    revenue_growth = (
+                        (revenue - prev_period.revenue) / prev_period.revenue
+                    ) * 100
+                    revenue_growth_str = f"{revenue_growth:+.1f}%"
+
+                # Net income growth
+                if net_income and prev_period.net_income:
+                    net_income_growth = (
+                        (net_income - prev_period.net_income) / prev_period.net_income
+                    ) * 100
+                    net_income_growth_str = f"{net_income_growth:+.1f}%"
+
+                # Operating cashflow growth
+                if operating_cashflow and prev_period.operating_cashflow:
+                    operating_cf_growth = (
+                        (operating_cashflow - prev_period.operating_cashflow)
+                        / prev_period.operating_cashflow
+                    ) * 100
+                    operating_cf_growth_str = f"{operating_cf_growth:+.1f}%"
+
+                # FCF growth
+                if fcf and prev_period.free_cash_flow:
+                    fcf_growth = (
+                        (fcf - prev_period.free_cash_flow) / prev_period.free_cash_flow
+                    ) * 100
+                    fcf_growth_str = f"{fcf_growth:+.1f}%"
 
             gross_margin = period.gross_margin
             gross_margin_str = f"{gross_margin:.1%}" if gross_margin else "N/A"
@@ -296,9 +340,13 @@ class StockResearchCLI:
             row_data = [
                 year,
                 revenue_str,
+                revenue_growth_str,
                 net_income_str,
+                net_income_growth_str,
                 operating_cashflow_str,
+                operating_cf_growth_str,
                 fcf_str,
+                fcf_growth_str,
                 gross_margin_str,
                 roic_str,
                 roe_str,
@@ -307,7 +355,7 @@ class StockResearchCLI:
             ]
             data_rows.append(row_data)
 
-        # Calculate column widths
+        # Calculate column widths (more compact)
         column_widths = []
         for i, header in enumerate(headers):
             # Start with header width
@@ -318,8 +366,11 @@ class StockResearchCLI:
                 if i < len(row):
                     max_width = max(max_width, len(str(row[i])))
 
-            # Add some padding
-            column_widths.append(max_width + 2)
+            # Add minimal padding, extra space for growth columns to fit emoji
+            if i in [2, 4, 6, 8]:  # Growth columns
+                column_widths.append(max_width + 3)  # Extra space for emoji
+            else:
+                column_widths.append(max_width + 1)
 
         # Format and print header
         header_line = " | ".join(f"{h:>{w}}" for h, w in zip(headers, column_widths))
@@ -329,10 +380,32 @@ class StockResearchCLI:
         separator_line = "-+-".join("-" * w for w in column_widths)
         self.show_info(separator_line)
 
-        # Print data rows
+        # Print data rows with colored growth values
         for row in data_rows:
-            row_line = " | ".join(f"{d:>{w}}" for d, w in zip(row, column_widths))
-            self.show_info(row_line)
+            # Build the row line piece by piece to handle coloring
+            output_line = ""
+
+            for i, (data, width) in enumerate(zip(row, column_widths)):
+                # Add separator except for first column
+                if i > 0:
+                    output_line += " | "
+
+                # Apply colors to growth columns (indices 2, 4, 6, 8)
+                if i in [2, 4, 6, 8] and data != "N/A":
+                    if data.startswith("+"):
+                        # Green for positive growth - format with emoji within width
+                        formatted_data = f"🟢{data:>{width - 2}}"
+                    elif data.startswith("-"):
+                        # Red for negative growth - format with emoji within width
+                        formatted_data = f"🔴{data:>{width - 2}}"
+                    else:
+                        formatted_data = f"{data:>{width}}"
+                    output_line += formatted_data
+                else:
+                    formatted_data = f"{data:>{width}}"
+                    output_line += formatted_data
+
+            self.show_info(output_line)
 
         self.show_info("")
 
