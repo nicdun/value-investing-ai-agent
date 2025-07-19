@@ -50,6 +50,27 @@ class StockResearchCLI:
             or "Please enter at least 2 characters",
         ).ask()
 
+    def get_analysis_years(self) -> int:
+        """Get number of years for fundamental data analysis from user."""
+        years_str = questionary.text(
+            "📅 Enter number of years for analysis (5-20, default: 10):",
+            style=self.style,
+            default="10",
+            validate=lambda text: self._validate_years(text),
+        ).ask()
+        return int(years_str.strip())
+
+    def _validate_years(self, text: str) -> str | bool:
+        """Validate years input."""
+        try:
+            years = int(text.strip())
+            if 5 <= years <= 20:
+                return True
+            else:
+                return "Please enter a number between 5 and 20"
+        except ValueError:
+            return "Please enter a valid number"
+
     def select_stock_ticker(self, search_results: List[Dict]) -> Optional[str]:
         """
         Display search results and let user select a stock ticker.

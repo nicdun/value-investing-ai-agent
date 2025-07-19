@@ -58,6 +58,22 @@ def evaluate(
     overview: StockMetaData,
     fundamental_data_time_series: list[ProcessedFundamentalData],
 ) -> str:
+    """
+    Perform comprehensive value investing analysis on the given stock data.
+
+    Args:
+        overview: Stock metadata and overview information
+        fundamental_data_time_series: Time series of processed fundamental data
+        analysis_years: Number of years of data to use for analysis (5-20, default 10)
+
+    Returns:
+        EvaluationSignal with the complete investment analysis
+    """
+    # Show analysis scope
+    cli.show_info(
+        f"\n🔍 Performing analysis using {len(fundamental_data_time_series)} years of data"
+    )
+
     # Perform analyses
     cli.show_progress_start("Business Model: Analyzing business predictability")
     # predictability_analysis = analyze_predictability(fundamental_data)
@@ -74,6 +90,7 @@ def evaluate(
 
     cli.show_progress_start("Management: Analyzing management quality")
     management_analysis = analyze_management_quality(fundamental_data_time_series)
+    cli.show_progress_success("Management quality analysis completed")
     print_analysis_results("Management Quality", management_analysis)
 
     cli.show_progress_start("Margin of Safety: Calculating valuation")
@@ -259,7 +276,7 @@ def analyze_growth_rates(
 
     final_score = max(0, min(10, score * 10 / (len(metrics) * 2)))
 
-    return {"score": score, "details": "; ".join(details)}
+    return {"score": final_score, "details": "; ".join(details)}
 
 
 def analyze_management_quality(
@@ -481,13 +498,13 @@ def analyze_management_quality(
     ]
 
     if share_counts and len(share_counts) >= 3:
-        if share_counts[0] < share_counts[-1] * 0.95:  # 5%+ reduction in shares
+        if share_counts[0] < share_counts[5] * 0.95:  # 5%+ reduction in shares
             score += 2
             details.append("Shareholder-friendly: Reducing share count over time")
-        elif share_counts[0] < share_counts[-1] * 1.05:  # Stable share count
+        elif share_counts[0] < share_counts[5] * 1.05:  # Stable share count
             score += 1
             details.append("Stable share count: Limited dilution")
-        elif share_counts[0] > share_counts[-1] * 1.2:  # >20% dilution
+        elif share_counts[0] > share_counts[5] * 1.2:  # >20% dilution
             score -= 1  # Penalty for excessive dilution
             details.append("Concerning dilution: Share count increased significantly")
         else:
@@ -528,7 +545,7 @@ def calculate_margin_of_safety(
     if not fcf_values or len(fcf_values) < 3:
         return {"score": 0, "details": "Insufficient free cash flow data for valuation"}
 
-    # Normalize earnings by taking average of last 3-5 years
+    # Normalize fcf by taking average of last 3-5 years
     normalized_fcf = sum(fcf_values[: min(5, len(fcf_values))]) / min(
         5, len(fcf_values)
     )

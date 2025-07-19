@@ -15,6 +15,7 @@ class Metrics(BaseModel):
 class ResearchState(BaseModel):
     messages: Annotated[list, add_messages] = []
     ticker_symbol: str = ""
+    analysis_years: int = 10  # Default to 10 years
     fundamental_data: FundamentalData = None
     evaluation: ValueEvaluation = None
     reports: list[PDFDocument] = []

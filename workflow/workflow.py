@@ -66,14 +66,22 @@ class Workflow:
             return ResearchState()
 
     def _retrieve_user_input(self, state: ResearchState) -> dict:
-        """Get user input for stock name using questionary."""
+        """Get user input for stock name and analysis years using questionary."""
         try:
             user_input = self.cli.get_stock_name()
             if not user_input:
                 # User cancelled input
                 return {}
 
-            return {"messages": [HumanMessage(content=user_input)]}
+            analysis_years = self.cli.get_analysis_years()
+            if not analysis_years:
+                # User cancelled input
+                return {}
+
+            return {
+                "messages": [HumanMessage(content=user_input)],
+                "analysis_years": analysis_years,
+            }
         except KeyboardInterrupt:
             self.cli.display_info("Search cancelled.")
             return {}
@@ -271,12 +279,15 @@ class Workflow:
             state.fundamental_data, annual_anaylsis
         )
 
+        limited_fundamental_data = fundamental_data_time_series[: state.analysis_years]
+
         self.cli.print_fundamental_data_time_series(
             state.ticker_symbol, fundamental_data_time_series
         )
 
         analysis_output = evaluate(
-            state.fundamental_data.overview, fundamental_data_time_series
+            state.fundamental_data.overview,
+            limited_fundamental_data,
         )
 
         self.cli.show_progress_success("Fundamental data analysis completed")
