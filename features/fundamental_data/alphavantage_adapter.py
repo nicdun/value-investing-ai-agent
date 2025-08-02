@@ -234,6 +234,26 @@ class AlphaVantageAPI:
             return DataResult([], from_cache=False)
 
     @staticmethod
+    def get_currency_ratio(symbol: str) -> float:
+        # Check cache first
+        exchange_rate = cache.get_exchange_rate(symbol)
+        if exchange_rate:
+            return exchange_rate
+
+        """Get the currency ratio for a symbol."""
+        url = f"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency={symbol}&to_currency=USD&apikey={ALPHAVANTAGE_API_KEY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        exchange_rate = float(
+            data["Realtime Currency Exchange Rate"]["5. Exchange Rate"]
+        )
+        cache.set_exchange_rate(symbol, exchange_rate)
+
+        return exchange_rate
+
+    @staticmethod
     def get_comprehensive_data(symbol: str) -> FundamentalData:
         """Get all available data for a symbol, checking cache first, then fetching from API if not cached."""
         # Overview

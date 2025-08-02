@@ -723,8 +723,3 @@ def generate_output(
         prompt=prompt,
         pydantic_model=EvaluationSignal,
     )
-
-
-def extract_financial_metrics(fundamental_data: FundamentalData) -> dict:
-    # Implementation of extract_financial_metrics function
-    pass

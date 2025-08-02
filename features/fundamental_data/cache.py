@@ -23,6 +23,7 @@ class PersistentCache:
         self._cash_flow_cache: dict[str, list[CashFlowReport]] = {}
         self._income_statement_cache: dict[str, list[IncomeStatementReport]] = {}
         self._calculated_metrics_cache: dict[str, list[CalculatedMetrics]] = {}
+        self._exchange_rate_cache: dict[str, float] = {}
         self._symbol_search_cache: dict[str, dict] = {}  # symbol -> stock_data mapping
 
         # Set up cache file path
@@ -69,6 +70,7 @@ class PersistentCache:
                     symbol: stock_data
                     for symbol, stock_data in self._symbol_search_cache.items()
                 },
+                "exchange_rate": self._exchange_rate_cache,
                 "last_updated": datetime.now().isoformat(),
                 "version": "1.0",
             }
@@ -179,6 +181,10 @@ class PersistentCache:
                                 f"Warning: Failed to load symbol search data for '{symbol}': {e}"
                             )
 
+            # Load exchange rate data
+            if "exchange_rate" in cache_data:
+                self._exchange_rate_cache = cache_data["exchange_rate"]
+
             # Print cache statistics
             total_symbols = len(self.get_cached_symbols())
             total_overview = len(self._overview_cache)
@@ -192,6 +198,7 @@ class PersistentCache:
                 len(reports) for reports in self._income_statement_cache.values()
             )
             total_symbol_searches = len(self._symbol_search_cache)
+            total_exchange_rate = len(self._exchange_rate_cache)
 
             print(f"Loaded cache from {self.cache_file_path}:")
             print(f"  - {total_symbols} symbols")
@@ -200,6 +207,7 @@ class PersistentCache:
             print(f"  - {total_cash_flow} cash flow reports")
             print(f"  - {total_income_statement} income statement reports")
             print(f"  - {total_symbol_searches} cached stock symbols for search")
+            print(f"  - {total_exchange_rate} exchange rate records")
 
             if "last_updated" in cache_data:
                 print(f"  - Last updated: {cache_data['last_updated']}")
@@ -311,6 +319,16 @@ class PersistentCache:
         self._calculated_metrics_cache[symbol] = self._merge_calculated_metrics(
             self._calculated_metrics_cache.get(symbol), data
         )
+        self._save_to_file()
+
+    # Exchange Rate methods
+    def get_exchange_rate(self, symbol: str) -> float | None:
+        """Get cached exchange rate if available."""
+        return self._exchange_rate_cache.get(symbol)
+
+    def set_exchange_rate(self, symbol: str, exchange_rate: float):
+        """Cache exchange rate and save to file."""
+        self._exchange_rate_cache[symbol] = exchange_rate
         self._save_to_file()
 
     # Symbol Search methods

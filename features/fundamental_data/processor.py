@@ -1,67 +1,6 @@
 from features.fundamental_data.model import FundamentalData, ProcessedFundamentalData
 
 
-def extract_financial_metrics(fundamental_data: FundamentalData) -> dict:
-    """Extract and combine financial metrics from all reports."""
-    metrics = {}
-
-    # Get the most recent data from each report type
-    if fundamental_data.income_statement:
-        latest_income = fundamental_data.income_statement[0]
-        metrics.update(
-            {
-                "revenue": latest_income.total_revenue,
-                "net_income": latest_income.net_income,
-                "gross_profit": latest_income.gross_profit,
-                "operating_income": latest_income.operating_income,
-                "research_and_development": latest_income.research_and_development,
-                "ebitda": latest_income.ebitda,
-            }
-        )
-
-        # Calculate gross margin if possible
-        if metrics.get("revenue") and metrics.get("gross_profit"):
-            metrics["gross_margin"] = metrics["gross_profit"] / metrics["revenue"]
-
-    if fundamental_data.balance_sheet:
-        latest_balance = fundamental_data.balance_sheet[0]
-        metrics.update(
-            {
-                "total_assets": latest_balance.total_assets,
-                "shareholders_equity": latest_balance.total_shareholder_equity,
-                "cash_and_equivalents": latest_balance.cash_and_cash_equivalents_at_carrying_value,
-                "total_debt": latest_balance.short_long_term_debt_total,
-                "goodwill_and_intangible_assets": (latest_balance.goodwill or 0)
-                + (latest_balance.intangible_assets or 0),
-                "outstanding_shares": latest_balance.common_stock_shares_outstanding,
-            }
-        )
-
-    if fundamental_data.cash_flow:
-        latest_cashflow = fundamental_data.cash_flow[0]
-        operating_cashflow = latest_cashflow.operating_cashflow
-        capital_expenditures = latest_cashflow.capital_expenditures
-
-        # Calculate free cash flow
-        if operating_cashflow is not None and capital_expenditures is not None:
-            metrics["free_cash_flow"] = (
-                operating_cashflow + capital_expenditures
-            )  # capex is typically negative
-
-        metrics.update(
-            {
-                "operating_cashflow": operating_cashflow,
-                "capital_expenditure": capital_expenditures,
-            }
-        )
-
-    # Extract market cap from overview
-    if fundamental_data.overview and fundamental_data.overview.market_capitalization:
-        metrics["market_cap"] = fundamental_data.overview.market_capitalization
-
-    return metrics
-
-
 def get_fundamental_data_time_series(
     fundamental_data: FundamentalData, annual: bool
 ) -> list[ProcessedFundamentalData]:
@@ -171,3 +110,23 @@ def get_fundamental_data_time_series(
         time_series.append(period_data)
 
     return time_series
+
+
+def process_fundamental_data_to_usd(
+    exchange_rate: float,
+    fundamental_data_time_series: list[ProcessedFundamentalData],
+) -> list[ProcessedFundamentalData]:
+    """Process the fundamental data time series to USD."""
+    for period_data in fundamental_data_time_series:
+        period_data.revenue = period_data.revenue * exchange_rate
+        period_data.net_income = period_data.net_income * exchange_rate
+        period_data.gross_profit = period_data.gross_profit * exchange_rate
+        period_data.research_and_development = (
+            period_data.research_and_development * exchange_rate
+        )
+        period_data.operating_cashflow = period_data.operating_cashflow * exchange_rate
+        period_data.capital_expenditures = (
+            period_data.capital_expenditures * exchange_rate
+        )
+        period_data.free_cash_flow = period_data.free_cash_flow * exchange_rate
+    return fundamental_data_time_series

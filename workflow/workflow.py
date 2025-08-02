@@ -9,7 +9,10 @@ from langgraph.graph import END, START, StateGraph
 from config.env import GOOGLE_API_KEY
 from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
 from features.fundamental_data.model import FundamentalData
-from features.fundamental_data.processor import get_fundamental_data_time_series
+from features.fundamental_data.processor import (
+    get_fundamental_data_time_series,
+    process_fundamental_data_to_usd,
+)
 from features.llm.google_genai import get_google_genai_llm
 from features.evaluation.value_evaluation import evaluate
 from features.research.firecrawl_adapter import FirecrawlAdapter
@@ -279,6 +282,20 @@ class Workflow:
             state.fundamental_data, annual_anaylsis
         )
 
+        # Convert to USD if currency is not USD and reported_currency != overview.currency for mcap
+        if (
+            state.fundamental_data.income_statement[0].reported_currency != "USD"
+            and state.fundamental_data.income_statement[0].reported_currency
+            != state.fundamental_data.overview.currency
+        ):
+            exchange_rate = AlphaVantageAPI.get_currency_ratio(
+                state.fundamental_data.income_statement[0].reported_currency
+            )
+            fundamental_data_time_series = process_fundamental_data_to_usd(
+                exchange_rate, fundamental_data_time_series
+            )
+
+        # Limit to analysis years
         limited_fundamental_data = fundamental_data_time_series[: state.analysis_years]
 
         self.cli.print_fundamental_data_time_series(
