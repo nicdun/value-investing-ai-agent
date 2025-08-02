@@ -192,7 +192,7 @@ class StockResearchCLI:
         if data.dividend_per_share:
             questionary.print(f"  Dividend Per Share: {data.dividend_per_share}")
         if data.dividend_yield:
-            questionary.print(f"  Dividend Yield: {data.dividend_yield}")
+            questionary.print(f"  Dividend Yield: {data.dividend_yield * 100:.2f}%")
         if data.eps:
             questionary.print(f"  EPS: {data.eps}")
 

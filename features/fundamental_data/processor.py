@@ -139,7 +139,7 @@ def get_fundamental_data_time_series(
                 and cashflow.capital_expenditures is not None
             ):
                 period_data.free_cash_flow = (
-                    cashflow.operating_cashflow + cashflow.capital_expenditures
+                    cashflow.operating_cashflow - cashflow.capital_expenditures
                 )
 
         # Calculate ROIC
