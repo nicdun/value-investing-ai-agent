@@ -68,7 +68,7 @@ def display_detailed_report(state: ResearchState, cli: StockResearchCLI):
         cli.display_error("No report available to display.")
         return
 
-    cli.display_info("📊 DETAILED ANALYSIS REPORT")
+    cli.display_info("📊 FIND THE FIND THE FIND THE FIND THE DETAILED ANALYSIS REPORT")
     cli.display_info("=" * 60)
 
     # Display basic info
