@@ -1,4 +1,12 @@
-from features.fundamental_data.model import FundamentalData, ProcessedFundamentalData
+from features.data.model import FundamentalData, ProcessedFundamentalData
+
+
+def get_quarter_from_date(date: str) -> str:
+    """Get the quarter from a date in YYYY-MM-DD format."""
+    year = int(date[:4])
+    month = int(date[5:7])
+    quarter = (month - 1) // 3 + 1
+    return f"{year}Q{quarter}"
 
 
 def get_fundamental_data_time_series(

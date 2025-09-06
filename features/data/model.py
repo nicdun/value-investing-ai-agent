@@ -30,6 +30,15 @@ def parse_float_or_none(value: str) -> float | None:
     return None
 
 
+class TranscriptEntry(BaseModel):
+    """Transcript of an earnings call."""
+
+    speaker: str
+    title: str | None = None
+    content: str
+    sentiment: str | None = None
+
+
 class StockMetaData(BaseModel):
     """Stock metadata and overview information."""
 

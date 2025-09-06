@@ -1,20 +1,22 @@
 from datetime import datetime
 
-from langchain.chat_models import init_chat_model
 from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 
-from config.env import GOOGLE_API_KEY
-from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
-from features.fundamental_data.model import FundamentalData
-from features.fundamental_data.processor import (
+from features.data.alphavantage_adapter import AlphaVantageAPI
+from features.data.model import FundamentalData
+from features.data.processor import (
     get_fundamental_data_time_series,
+    get_quarter_from_date,
     process_fundamental_data_to_usd,
 )
-from features.llm.google_genai import get_google_genai_llm
 from features.evaluation.value_evaluation import evaluate
+from features.llm.google_genai import get_google_genai_llm
+from features.llm.llm_interaction import (
+    get_transcript_summary,
+    get_value_investing_report,
+)
 from features.research.firecrawl_adapter import FirecrawlAdapter
 from features.research.pdf_agent import PdfAgent
 from ui.cli import get_cli
@@ -38,17 +40,34 @@ class Workflow:
         graph_builder.add_node("retrieve_user_input", self._retrieve_user_input)
         graph_builder.add_node("retrieve_ticker_symbol", self._retrieve_ticker_symbol)
         graph_builder.add_node("retrieve_ticker_data", self._retrieve_ticker_data)
-        graph_builder.add_node("analyze_ticker_data", self._analyze_ticker_data)
+        graph_builder.add_node(
+            "retrieve_qualitative_data", self._retrieve_qualitative_data
+        )
+        graph_builder.add_node(
+            "caclulate_ticker_data_metrics", self._caclulate_ticker_data_metrics
+        )
+        graph_builder.add_node(
+            "analyze_qualitative_data", self._analyze_qualitative_data
+        )
+        graph_builder.add_node(
+            "analyze_value_evaluation", self._analyze_value_evaluation
+        )
         # graph_builder.add_node("web_research", self._web_research)
         # graph_builder.add_node("analyze_web_research", self._analyze_web_research)
         # graph_builder.add_node("generate_report", self.generate_report)
         # graph_builder.add_node("investment_decision", self.investment_decision)
         graph_builder.add_edge("retrieve_user_input", "retrieve_ticker_symbol")
         graph_builder.add_edge("retrieve_ticker_symbol", "retrieve_ticker_data")
-        graph_builder.add_edge("retrieve_ticker_data", "analyze_ticker_data")
+        graph_builder.add_edge("retrieve_ticker_data", "retrieve_qualitative_data")
+        graph_builder.add_edge("retrieve_ticker_data", "caclulate_ticker_data_metrics")
+        graph_builder.add_edge("retrieve_qualitative_data", "analyze_qualitative_data")
+        graph_builder.add_edge(
+            "caclulate_ticker_data_metrics", "analyze_value_evaluation"
+        )
+        # graph_builder.add_edge("analyze_qualitative_data", "generate_report")
         # graph_builder.add_edge("analyze_ticker_data", "web_research")
         # graph_builder.add_edge("web_research", "analyze_web_research")
-        graph_builder.add_edge("analyze_ticker_data", END)
+        graph_builder.add_edge("analyze_value_evaluation", END)
 
         return graph_builder.compile()
 
@@ -270,7 +289,7 @@ class Workflow:
             self.cli.show_progress_error(f"Error analyzing fundamental data: {str(e)}")
             return {}
 
-    def _analyze_ticker_data(self, state: ResearchState) -> dict:
+    def _caclulate_ticker_data_metrics(self, state: ResearchState) -> dict:
         """Analyze fundamental data for the selected ticker."""
         if not state.ticker_symbol or not state.fundamental_data:
             return {}
@@ -309,7 +328,33 @@ class Workflow:
 
         self.cli.show_progress_success("Fundamental data analysis completed")
 
-        return {"report": analysis_output}
+        return {"value_evaluation": analysis_output}
+
+    def _retrieve_qualitative_data(self, state: ResearchState) -> dict:
+        """Retrieve qualitative data for the company."""
+        self.cli.show_progress_start("Retrieving qualitative data...")
+
+        quarter = get_quarter_from_date(state.fundamental_data.overview.latest_quarter)
+
+        # Get last earnings call transcript
+        transcript = AlphaVantageAPI.get_last_earnings_call_transcript(
+            state.ticker_symbol,
+            quarter,
+        )
+
+        return {"transcript": transcript}
+
+    def _analyze_qualitative_data(self, state: ResearchState) -> dict:
+        """Analyze qualitative data for the company."""
+        self.cli.show_progress_start("Analyzing earnings call transcript...")
+
+        transcript_summary = get_transcript_summary(state.transcript)
+
+        self.cli.show_info("\n🎯 Earnings Call Transcript Summary")
+        self.cli.show_info("=" * 60)
+        self.cli.show_info(transcript_summary)
+
+        return {}
 
     def _web_research(self, state: ResearchState) -> dict:
         """Perform web research for the company."""
@@ -420,3 +465,21 @@ class Workflow:
         except Exception as e:
             self.cli.show_progress_error(f"Error during analysis: {str(e)}")
             return {}
+
+    def _analyze_value_evaluation(self, state: ResearchState) -> dict:
+        """Generate a report for the company."""
+
+        self.cli.show_progress_start("Analyzing value investing data...")
+        output = get_value_investing_report(
+            state.fundamental_data.overview,
+            state.value_evaluation.growth_rates_analysis,
+            state.value_evaluation.moat_analysis,
+            state.value_evaluation.management_analysis,
+            state.value_evaluation.valuation_analysis,
+        )
+        self.cli.show_progress_success("Investment analysis completed")
+
+        self.cli.show_info("\n🎯 Value Investing Report")
+        self.cli.show_info("=" * 60)
+        self.cli.show_info(output.report)
+        return {}

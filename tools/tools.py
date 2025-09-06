@@ -1,8 +1,8 @@
 import requests
 from mcp_server import mcp
 from urllib.parse import quote_plus
-from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI
-from features.fundamental_data.model import FundamentalData
+from features.data.alphavantage_adapter import AlphaVantageAPI
+from features.data.model import FundamentalData
 from config.env import ALPHAVANTAGE_API_KEY
 
 

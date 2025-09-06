@@ -3,8 +3,8 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 import requests
 
-from features.fundamental_data.alphavantage_adapter import AlphaVantageAPI, DataResult
-from features.fundamental_data.model import (
+from features.data.alphavantage_adapter import AlphaVantageAPI, DataResult
+from features.data.model import (
     FundamentalData,
     StockMetaData,
     BalanceSheetReport,

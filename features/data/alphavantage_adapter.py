@@ -7,6 +7,7 @@ from .model import (
     BalanceSheetReport,
     CashFlowReport,
     IncomeStatementReport,
+    TranscriptEntry,
 )
 from .cache import get_cache
 
@@ -252,6 +253,33 @@ class AlphaVantageAPI:
         cache.set_exchange_rate(symbol, exchange_rate)
 
         return exchange_rate
+
+    @staticmethod
+    def get_last_earnings_call_transcript(
+        symbol: str, quarter: str
+    ) -> list[TranscriptEntry]:
+        """Get the last earnings call transcript for a symbol.
+        Quarter is in the format of YYYYQM
+        """
+        # Check cache first
+        transcript = cache.get_transcript(symbol)
+        if transcript:
+            return transcript
+
+        url = f"https://www.alphavantage.co/query?function=EARNINGS_CALL_TRANSCRIPT&symbol={symbol}&quarter={quarter}&apikey={ALPHAVANTAGE_API_KEY}"
+        print(url)
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        # Transform API response to TranscriptEntry models
+        transcript_entries = []
+        for entry in data["transcript"]:
+            transcript_entries.append(TranscriptEntry(**entry))
+
+        cache.set_transcript(symbol, transcript_entries)
+
+        return transcript_entries
 
     @staticmethod
     def get_comprehensive_data(symbol: str) -> FundamentalData:

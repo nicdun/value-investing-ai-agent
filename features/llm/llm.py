@@ -9,6 +9,14 @@ cli = get_cli()
 
 def call_llm(
     prompt: ChatPromptTemplate,
+) -> str:
+    llm = get_google_genai_llm()
+    response = llm.invoke(prompt)
+    return response.content
+
+
+def call_llm_with_structured_output(
+    prompt: ChatPromptTemplate,
     pydantic_model: BaseModel,
 ) -> BaseModel:
     llm = get_google_genai_llm()

@@ -3,11 +3,15 @@ from typing import Any
 
 
 class ValueEvaluation(BaseModel):
-    business_model: dict[str, Any]
-    moat: dict[str, Any]
-    management: dict[str, Any]
-    margin_of_safety: dict[str, Any]
+    growth_rates_analysis: dict[str, Any]
+    moat_analysis: dict[str, Any]
+    management_analysis: dict[str, Any]
+    valuation_analysis: dict[str, Any]
 
 
 class EvaluationSignal(BaseModel):
     report: str
+
+
+class TranscriptSummary(BaseModel):
+    summary: str

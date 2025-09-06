@@ -7,7 +7,7 @@ import questionary
 from questionary import Style
 from typing import List, Dict, Optional
 import sys
-from features.fundamental_data.model import ProcessedFundamentalData, StockMetaData
+from features.data.model import ProcessedFundamentalData, StockMetaData
 
 
 # Custom style for the CLI

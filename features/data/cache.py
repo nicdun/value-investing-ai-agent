@@ -1,15 +1,14 @@
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from .model import (
-    FundamentalData,
     StockMetaData,
     BalanceSheetReport,
     CashFlowReport,
     IncomeStatementReport,
     CalculatedMetrics,
+    TranscriptEntry,
 )
 
 
@@ -24,6 +23,7 @@ class PersistentCache:
         self._income_statement_cache: dict[str, list[IncomeStatementReport]] = {}
         self._calculated_metrics_cache: dict[str, list[CalculatedMetrics]] = {}
         self._exchange_rate_cache: dict[str, float] = {}
+        self._transcript_cache: dict[str, list[TranscriptEntry]] = {}
         self._symbol_search_cache: dict[str, dict] = {}  # symbol -> stock_data mapping
 
         # Set up cache file path
@@ -71,6 +71,10 @@ class PersistentCache:
                     for symbol, stock_data in self._symbol_search_cache.items()
                 },
                 "exchange_rate": self._exchange_rate_cache,
+                "transcript": {
+                    symbol: [entry.model_dump() for entry in entries] if entries else []
+                    for symbol, entries in self._transcript_cache.items()
+                },
                 "last_updated": datetime.now().isoformat(),
                 "version": "1.0",
             }
@@ -185,6 +189,20 @@ class PersistentCache:
             if "exchange_rate" in cache_data:
                 self._exchange_rate_cache = cache_data["exchange_rate"]
 
+            # Load transcript data
+            if "transcript" in cache_data:
+                for symbol, entries_list in cache_data["transcript"].items():
+                    if entries_list:
+                        try:
+                            self._transcript_cache[symbol] = [
+                                TranscriptEntry(**entry_dict)
+                                for entry_dict in entries_list
+                            ]
+                        except Exception as e:
+                            print(
+                                f"Warning: Failed to load transcript data for {symbol}: {e}"
+                            )
+
             # Print cache statistics
             total_symbols = len(self.get_cached_symbols())
             total_overview = len(self._overview_cache)
@@ -199,7 +217,9 @@ class PersistentCache:
             )
             total_symbol_searches = len(self._symbol_search_cache)
             total_exchange_rate = len(self._exchange_rate_cache)
-
+            total_transcripts = sum(
+                len(entries) for entries in self._transcript_cache.values()
+            )
             print(f"Loaded cache from {self.cache_file_path}:")
             print(f"  - {total_symbols} symbols")
             print(f"  - {total_overview} overview records")
@@ -208,7 +228,7 @@ class PersistentCache:
             print(f"  - {total_income_statement} income statement reports")
             print(f"  - {total_symbol_searches} cached stock symbols for search")
             print(f"  - {total_exchange_rate} exchange rate records")
-
+            print(f"  - {total_transcripts} transcripts")
             if "last_updated" in cache_data:
                 print(f"  - Last updated: {cache_data['last_updated']}")
 
@@ -331,6 +351,16 @@ class PersistentCache:
         self._exchange_rate_cache[symbol] = exchange_rate
         self._save_to_file()
 
+    # Transcript methods
+    def get_transcript(self, symbol: str) -> list[TranscriptEntry] | None:
+        """Get cached transcript if available."""
+        return self._transcript_cache.get(symbol)
+
+    def set_transcript(self, symbol: str, data: list[TranscriptEntry]):
+        """Append new transcript data to cache and save to file."""
+        self._transcript_cache[symbol] = data
+        self._save_to_file()
+
     # Symbol Search methods
     def search_symbols(self, query: str) -> list[dict] | None:
         """
@@ -385,6 +415,8 @@ class PersistentCache:
             "cash_flow": self._cash_flow_cache,
             "income_statement": self._income_statement_cache,
             "calculated_metrics": self._calculated_metrics_cache,
+            "exchange_rate": self._exchange_rate_cache,
+            "transcript": self._transcript_cache,
         }
 
         cache = cache_map.get(data_type)
@@ -410,7 +442,8 @@ class PersistentCache:
             self._income_statement_cache.clear()
             self._calculated_metrics_cache.clear()
             self._symbol_search_cache.clear()
-
+            self._exchange_rate_cache.clear()
+            self._transcript_cache.clear()
         self._save_to_file()
 
     def get_cached_symbols(self) -> list[str]:
@@ -444,6 +477,10 @@ class PersistentCache:
                     len(metrics) for metrics in self._calculated_metrics_cache.values()
                 ),
                 "symbol_search_symbols": len(self._symbol_search_cache),
+                "exchange_rate": len(self._exchange_rate_cache),
+                "transcript": sum(
+                    len(entries) for entries in self._transcript_cache.values()
+                ),
             },
             "symbol_search_cache": {
                 symbol: stock_data.get("2. name", "Unknown")
